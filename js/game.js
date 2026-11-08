@@ -106,6 +106,11 @@ const slots = {
   1: { conn: null, fighter: 'kira', ready: false, cpu: false, input: freshInput() },
   2: { conn: null, fighter: 'brick', ready: false, cpu: false, input: freshInput() },
 };
+const NAME_MAX = 8;
+function cleanName(n) { return String(n || '').toUpperCase().replace(/[^A-Z0-9 .\-!?]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX); }
+// What to call a player on screen: their own name if they gave one, else the fighter's name.
+function who(s) { const sl = slots[s]; if (sl.cpu) return 'CPU'; return sl.name || FIGHTERS[sl.fighter].name; }
+function whoF(f) { return who(f.slot); }
 function pushAct(s, a) { slots[s].input.q.push({ a, age: 0 }); }
 
 function makeFighter(slot, key, x, facing, palKey) {
@@ -417,6 +422,7 @@ function onMsg(conn, m) {
   switch (m.t) {
     case 'in': sl.input.mx = Math.max(-1, Math.min(1, +m.mx || 0)); sl.input.block = !!m.block; sl.input.duck = !!m.duck; break;
     case 'act': if (['jump', 'punch', 'hook', 'kick', 'special'].includes(m.a)) pushAct(s, m.a); break;
+    case 'name': sl.name = cleanName(m.n); broadcastState(); break;
     case 'pick': if (FIGHTERS[m.f] && (phase === 'lobby' || phase === 'over')) { sl.fighter = m.f; broadcastState(); } break;
     case 'ready':
       if (phase === 'over') { backToLobbyOrRematch(); }
@@ -433,7 +439,7 @@ function broadcastState() {
     const other = s === 1 ? 2 : 1;
     send(s, { t: 'st', phase, slot: s, fighter: slots[s].fighter, ready: slots[s].ready,
       hp: f ? f.hp : 100, sp: f ? f.sp : 0, wins: wins[s], oppWins: wins[other],
-      opp: slotFilled(other) ? (slots[other].cpu ? 'CPU' : FIGHTERS[slots[other].fighter].name) : null,
+      opp: slotFilled(other) ? who(other) : null, name: slots[s].name || '',
       winner: phase === 'over' || phase === 'ko' ? roundWinner : 0 });
   }
 }
@@ -570,12 +576,14 @@ function drawHUD() {
   const [a, b] = P;
   bar(16, 12, 116, 9, a.hp, false, a.hp > 30 ? '#f5d90a' : '#ff4d4d');
   bar(VW - 16 - 116, 12, 116, 9, b.hp, true, b.hp > 30 ? '#f5d90a' : '#ff4d4d');
-  txt(a.def.name + (slots[1].cpu ? ' (CPU)' : ''), 16, 25, '#ffffff', 8);
-  txt(b.def.name + (slots[2].cpu ? ' (CPU)' : ''), VW - 16, 25, '#ffffff', 8, 'right');
+  txt(who(1), 16, 25, '#ffffff', 8);
+  txt(who(2), VW - 16, 25, '#ffffff', 8, 'right');
+  if (who(1) !== a.def.name) txt(a.def.name, 16, 36, '#9a93c9', 8);
+  if (who(2) !== b.def.name) txt(b.def.name, VW - 16, 36, '#9a93c9', 8, 'right');
   // round wins
   for (let i = 0; i < ROUNDS_TO_WIN; i++) {
-    ctx.fillStyle = i < wins[1] ? '#ff2e88' : '#2a2a33'; ctx.fillRect(16 + i * 9, 36, 6, 6);
-    ctx.fillStyle = i < wins[2] ? '#ff2e88' : '#2a2a33'; ctx.fillRect(VW - 22 - i * 9, 36, 6, 6);
+    ctx.fillStyle = i < wins[1] ? '#ff2e88' : '#2a2a33'; ctx.fillRect(16 + i * 9, 47, 6, 6);
+    ctx.fillStyle = i < wins[2] ? '#ff2e88' : '#2a2a33'; ctx.fillRect(VW - 22 - i * 9, 47, 6, 6);
   }
   // timer
   ctx.fillStyle = '#000'; ctx.fillRect(VW / 2 - 15, 9, 32, 22); ctx.fillStyle = '#ffffff'; ctx.fillRect(VW / 2 - 17, 7, 34, 22); ctx.fillStyle = '#0b0720'; ctx.fillRect(VW / 2 - 15, 9, 30, 18);
@@ -624,9 +632,9 @@ function drawLobby() {
   const row = (s, y) => {
     const sl = slots[s];
     const who = sl.conn ? 'PHONE' : sl.cpu ? 'CPU' : keyboardUsed[s] ? 'KEYBOARD' : 'WAITING...';
-    ctx.fillStyle = sl.conn || sl.cpu || keyboardUsed[s] ? '#1a1040' : '#120b2e'; ctx.fillRect(20, y, 150, 24);
+    ctx.fillStyle = sl.conn || sl.cpu || keyboardUsed[s] ? '#1a1040' : '#120b2e'; ctx.fillRect(20, y, 180, 24);
     ctx.fillStyle = s === 1 ? '#2ee6ff' : '#ff2e88'; ctx.fillRect(20, y, 3, 24);
-    txt('P' + s + '  ' + FIGHTERS[sl.fighter].name, 30, y + 4, '#ffffff', 8);
+    txt('P' + s + '  ' + (sl.name && !sl.cpu ? sl.name + ' · ' : '') + FIGHTERS[sl.fighter].name, 30, y + 4, '#ffffff', 8);
     txt(who + (sl.ready && (sl.conn) ? ' · READY' : ''), 30, y + 14, sl.ready && sl.conn ? '#ffe14d' : '#9a93c9', 8);
   };
   row(1, 80); row(2, 110);
@@ -640,14 +648,14 @@ function draw() {
   if (phase === 'lobby') { drawLobby(); return; }
   drawHUD();
   if (phase === 'intro') {
-    if (phaseT < 100) centerBanner(round >= 3 ? 'FINAL ROUND' : 'ROUND ' + round, P.map(p => p.def.name).join('  VS  '));
+    if (phaseT < 100) centerBanner(round >= 3 ? 'FINAL ROUND' : 'ROUND ' + round, P.map(whoF).join('  VS  '));
     else centerBanner('FIGHT!', null, '#ff2e88');
   }
-  if (phase === 'ko') centerBanner('K.O.!', phaseT > 60 ? P[roundWinner - 1].def.name + ' WINS THE ROUND' + (flawless ? ' · FLAWLESS' : '') : null, '#ff4d4d');
-  if (phase === 'timeup') centerBanner('TIME!', roundWinner ? P[roundWinner - 1].def.name + ' TAKES IT' : 'DRAW', '#ffe14d');
+  if (phase === 'ko') centerBanner('K.O.!', phaseT > 60 ? whoF(P[roundWinner - 1]) + ' WINS THE ROUND' + (flawless ? ' · FLAWLESS' : '') : null, '#ff4d4d');
+  if (phase === 'timeup') centerBanner('TIME!', roundWinner ? whoF(P[roundWinner - 1]) + ' TAKES IT' : 'DRAW', '#ffe14d');
   if (phase === 'over') {
     ctx.fillStyle = 'rgba(11,7,32,0.6)'; ctx.fillRect(0, 50, VW, 80);
-    centerBanner(P[roundWinner - 1].def.name + ' WINS', 'Press READY on your phone for a rematch', '#2ee6ff');
+    centerBanner(whoF(P[roundWinner - 1]) + ' WINS', 'Press READY on your phone for a rematch', '#2ee6ff');
   }
 }
 

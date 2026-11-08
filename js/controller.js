@@ -60,7 +60,7 @@ function connect() {
 }
 function openConn() {
   conn = peer.connect('nsx-' + room, { reliable: true, metadata: { device } });
-  conn.on('open', () => { setNet(true); send({ t: 'pick', f: myFighter }); });
+  conn.on('open', () => { setNet(true); send({ t: 'pick', f: myFighter }); sendName(); });
   conn.on('data', onMsg);
   conn.on('close', () => { setNet(false); setTimeout(() => { if (peer && !peer.destroyed) openConn(); }, 1500); });
 }
@@ -78,10 +78,16 @@ function onMsg(m) {
 }
 
 // ---------- lobby ----------
+const nameInput = $('#pname');
+nameInput.value = store.get('name', '');
+function cleanName(n) { return String(n || '').toUpperCase().replace(/[^A-Z0-9 .\-!?]/g, '').replace(/\s+/g, ' ').trimStart().slice(0, 8); }
+function sendName() { send({ t: 'name', n: cleanName(nameInput.value).trim() }); }
+nameInput.addEventListener('input', () => { const c = cleanName(nameInput.value); if (c !== nameInput.value) nameInput.value = c; store.set('name', c.trim()); sendName(); });
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') nameInput.blur(); });
 function markCard() { $$('.card').forEach(c => c.classList.toggle('on', c.dataset.f === myFighter)); }
 $$('.card').forEach(c => c.addEventListener('click', () => { myFighter = c.dataset.f; markCard(); send({ t: 'pick', f: myFighter }); }));
-$('#btn-ready').addEventListener('click', () => { recenter(); send({ t: 'ready' }); });
-$('#btn-solo').addEventListener('click', () => { recenter(); send({ t: 'ready', solo: true }); });
+$('#btn-ready').addEventListener('click', () => { sendName(); recenter(); send({ t: 'ready' }); });
+$('#btn-solo').addEventListener('click', () => { sendName(); recenter(); send({ t: 'ready', solo: true }); });
 $('#btn-rematch').addEventListener('click', () => send({ t: 'ready' }));
 
 $$('[data-mode]').forEach(b => b.addEventListener('click', () => { settings.mode = b.dataset.mode; store.set('mode', settings.mode); applyMode(); }));
@@ -117,7 +123,7 @@ function render() {
     $('#over-sub').textContent = state.wins + ' - ' + state.oppWins + (state.ready ? ' · waiting for rematch...' : '');
   } else {
     show('s-fight');
-    $('#me-name').textContent = (state.fighter === 'brick' ? 'BRICK' : 'KIRA-9');
+    $('#me-name').textContent = (state.name ? state.name + ' · ' : '') + (state.fighter === 'brick' ? 'BRICK' : 'KIRA-9');
     $('#score').textContent = state.wins + ' - ' + state.oppWins;
     const hp = $('#hp'); hp.style.width = state.hp + '%'; hp.classList.toggle('low', state.hp <= 30);
     const segs = $$('#sp i'); segs.forEach((s, i) => s.classList.toggle('on', (i + 1) * 20 <= state.sp));

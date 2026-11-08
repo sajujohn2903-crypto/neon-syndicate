@@ -26,7 +26,7 @@ Netlify Drop and Vercel also work. Any HTTPS static host is fine.
 
 1. The projector shows a QR code and a 4-letter room code.
 2. Each player scans the QR code with the iPhone camera, then taps **ENTER THE FIGHT** and allows motion access.
-3. Pick a fighter, test your tilt, then hit **READY**. With only one phone, hit **SOLO vs CPU**.
+3. Type your name (up to 8 letters), pick a fighter, test your motion, then hit **READY**. Your name shows on the projector in place of the fighter's name. With only one phone, hit **SOLO vs CPU**.
 4. Best of 3 rounds, 60 seconds each. Empty the other player's bar to K.O. them.
 
 ### Grip
