@@ -33,6 +33,11 @@ jobs:
       - name: Rename
         run: cp android/app/build/outputs/apk/debug/app-debug.apk neon-syndicate.apk
 
+      - name: Point the apk-latest tag at this commit
+        run: |
+          git tag -f apk-latest
+          git push -f origin refs/tags/apk-latest
+
       - name: Publish to the "Android app" release
         uses: softprops/action-gh-release@v2
         with:
