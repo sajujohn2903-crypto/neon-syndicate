@@ -38,8 +38,8 @@
     <div class="tiltbox">
       <div class="pix small">MOTION TEST</div>
       <div class="pad2d" id="pad2d"><span class="lbl up">JUMP</span><span class="lbl dn">DUCK</span><div id="tilt-dot" class="dot"></div></div>
-      <div class="hint">Tilt right and the dot goes right. Lift the phone up quickly to jump, drop it down to duck, lift it back up to stand. If up and down feel swapped, flip it below.</div>
-      <div id="gesture-test" class="gesture">Try a jab, a lift, a drop</div>
+      <div class="hint">Tilt right and the dot goes right. Tip the top of the phone up to jump. Drop the phone down quickly to duck, lift it back up to stand. If the jump tilt feels backwards, flip it below.</div>
+      <div id="gesture-test" class="gesture">Try a jab, a tilt up, a drop</div>
     </div>
 
     <details class="settings">
@@ -51,7 +51,7 @@
         <button data-sens="low">Low</button><button data-sens="med" class="on">Med</button><button data-sens="high">High</button>
       </div>
       <label class="check"><input type="checkbox" id="flip"> Flip left / right</label>
-      <label class="check"><input type="checkbox" id="flipv"> Flip up / down motion</label>
+      <label class="check"><input type="checkbox" id="flipv"> Flip jump tilt direction</label>
     </details>
 
     <p id="lobby-msg" class="status"></p>
@@ -72,7 +72,7 @@
     <div class="pad2d small2d" id="pad2d-2"><span class="lbl up">JUMP</span><span class="lbl dn">DUCK</span><div id="tilt-dot2" class="dot"></div></div>
 
     <div id="cheat" class="cheat">
-      <div><b>PUNCH</b>Jab forward</div><div><b>JUMP</b>Lift up</div><div><b>DUCK</b>Drop down</div>
+      <div><b>PUNCH</b>Jab forward</div><div><b>JUMP</b>Tilt up</div><div><b>DUCK</b>Drop down</div>
       <div><b>UPPERCUT</b>Duck + jab</div><div><b>SWEEP</b>Duck + kick</div><div><b>MOVE</b>Tilt left/right</div>
     </div>
 
@@ -89,6 +89,7 @@
       <button class="pb block" id="btn-block">BLOCK<small>hold</small></button>
       <button class="pb special" id="btn-special" data-act="special">SPECIAL<small id="sp-note">charging</small></button>
     </div>
+    <button id="btn-recenter" class="linkbtn">Re-centre jump tilt</button>
   </section>
 
   <!-- OVER -->
