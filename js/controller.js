@@ -9,7 +9,7 @@ const store = {
 };
 const device = store.get('device', null) || (() => { const id = Math.random().toString(36).slice(2, 10); store.set('device', id); return id; })();
 
-const settings = { mode: store.get('mode', 'motion'), sens: store.get('sens', 'med'), flip: store.get('flip', false), flipv: store.get('flipv', false) };
+const settings = { mode: store.get('mode', 'motion'), sens: store.get('sens', 'med'), flip: store.get('flip', false), flipv: store.get('flipv', false), grip: store.get('grip', 'upright') };
 const THRESH = { low: 19, med: 14, high: 10 };
 
 let peer = null, conn = null, room = '', mySlot = 0, state = { phase: 'lobby' }, myFighter = 'kira';
@@ -90,7 +90,10 @@ $('#flip').checked = settings.flip;
 $('#flip').addEventListener('change', e => { settings.flip = e.target.checked; store.set('flip', settings.flip); });
 $('#flipv').checked = settings.flipv;
 $('#flipv').addEventListener('change', e => { settings.flipv = e.target.checked; store.set('flipv', settings.flipv); });
+$$('[data-grip]').forEach(b => b.addEventListener('click', () => { settings.grip = b.dataset.grip; store.set('grip', settings.grip); applyMode(); recenter(); }));
 function applyMode() {
+  $$('[data-grip]').forEach(b => b.classList.toggle('on', b.dataset.grip === settings.grip));
+  document.body.classList.toggle('fist', settings.grip === 'fist' && settings.mode === 'motion');
   $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
   $$('[data-sens]').forEach(b => b.classList.toggle('on', b.dataset.sens === settings.sens));
   $('#pad-buttons').hidden = settings.mode !== 'buttons';
@@ -138,7 +141,8 @@ function hitFeedback(kind) {
 // Tilt left/right (from the gravity direction) moves you. Quick motions do the rest:
 //   jab forward (along the screen's axis) = punch
 //   lift the phone up = jump · drop it down = duck (lift back up to stand)
-let roll = 0, pitch = 0, pitch0 = 0, upArmed = true, haveGrav = false;
+let roll = 0, pitch = 0, upArmed = true, haveGrav = false;
+const g0 = { x: 0, y: -9.8, z: 0 };   // gravity at the neutral pose (set on READY and each round)
 const UP_ON = 20, UP_RESET = 10;
 let mx = 0, block = false, duck = false, holdLeft = false, holdRight = false, holdDuck = false;
 let jabUntil = 0, vertUntil = 0, freezeUntil = 0, duckUntil = 0;
@@ -147,7 +151,8 @@ const VTHRESH = { low: 13, med: 9.5, high: 7 };
 const DUCK_MAX_MS = 2500;
 
 function startSensors() { addEventListener('devicemotion', onMotion); }
-function recenter() { pitch0 = pitch; upArmed = true; }
+function recenter() { g0.x = grav.x; g0.y = grav.y; g0.z = grav.z; upArmed = true; }
+function wrap(d) { while (d > 180) d -= 360; while (d < -180) d += 360; return d; }
 
 function lobbyNote(t) { const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = t; }
 function fightAct(a, label) { if (settings.mode === 'motion' && state.phase === 'fight') { send({ t: 'act', a }); flashText(label, 400); } lobbyNote(label); }
@@ -165,8 +170,10 @@ function onMotion(e) {
     const k = haveGrav ? 0.2 : 1;
     grav.x += ((g.x - a.x) - grav.x) * k; grav.y += ((g.y - a.y) - grav.y) * k; grav.z += ((g.z - a.z) - grav.z) * k;
     roll = Math.atan2(grav.x, Math.hypot(grav.y, grav.z)) * 180 / Math.PI;
-    pitch = Math.atan2(grav.z, Math.abs(grav.y)) * 180 / Math.PI;
-    if (!haveGrav) pitch0 = pitch;
+    // pitch = how far the phone has rotated about its own left-right axis since the neutral pose.
+    // Works whether you hold it upright or flat with the screen facing the floor.
+    if (!haveGrav) { g0.x = grav.x; g0.y = grav.y; g0.z = grav.z; }
+    pitch = wrap((Math.atan2(grav.y, grav.z) - Math.atan2(g0.y, g0.z)) * 180 / Math.PI);
     haveGrav = true;
   }
   
@@ -176,10 +183,10 @@ function onMotion(e) {
   const up = a.x * ux + a.y * uy + a.z * uz;          // same sign convention as gravity, so + = upward on every phone
   const hx = a.x - up * ux, hy = a.y - up * uy, hz = a.z - up * uz;
   const horiz = Math.hypot(hx, hy, hz);
-  const fwd = Math.abs(a.z);
 
-  // PUNCH: hard push along the screen axis
-  if (now > jabUntil && fwd > THRESH[settings.sens] && fwd > 1.3 * Math.max(Math.abs(a.x), Math.abs(a.y))) {
+  // PUNCH: a hard push forward. Measured as motion across the floor (sideways to gravity), so it works for
+  // an upright grip (screen towards you) and the fist grip (screen facing the floor) alike.
+  if (now > jabUntil && horiz > THRESH[settings.sens] && horiz > 1.3 * Math.abs(up)) {
     jabUntil = now + 260; vertUntil = Math.max(vertUntil, now + 300); freezeUntil = now + 320;
     fightAct('punch', duck ? 'UPPERCUT!' : 'PUNCH!');
     return;
@@ -198,7 +205,7 @@ function onMotion(e) {
 }
 
 $('#btn-recenter').addEventListener('click', () => { recenter(); flashText('CENTRED', 600); });
-function tiltLR() { return settings.flip ? -roll : roll; }
+function tiltLR() { let r = settings.grip === 'fist' ? -roll : roll; return settings.flip ? -r : r; }
 
 function updateMotion() {
   if (settings.mode === 'buttons') {
@@ -208,7 +215,7 @@ function updateMotion() {
   mx = Math.abs(g) < dz ? 0 : Math.max(-1, Math.min(1, (g - Math.sign(g) * dz) / (full - dz)));
   if (duck && performance.now() > duckUntil) duck = false;   // safety: never stay stuck ducking
   // JUMP: tip the top of the phone up; tip it back to centre before the next jump
-  let v = pitch - pitch0; if (settings.flipv) v = -v;
+  let v = -pitch; if (settings.flipv) v = -v;   // + = top of the phone tipping up/away (same on every phone)
   if (upArmed && v > UP_ON) { upArmed = false; if (duck) duck = false; fightAct('jump', 'JUMP!'); }
   if (!upArmed && v < UP_RESET) upArmed = true;
 }
@@ -217,7 +224,7 @@ let lastSent = '';
 setInterval(() => {
   updateMotion();
   const lr = settings.mode === 'buttons' ? mx : Math.max(-1, Math.min(1, tiltLR() / 26));
-  const ud = duck ? -1 : (settings.mode === 'motion' ? Math.max(0, Math.min(1, (settings.flipv ? -(pitch - pitch0) : (pitch - pitch0)) / 26)) : 0);
+  const ud = duck ? -1 : (settings.mode === 'motion' ? Math.max(0, Math.min(1, (settings.flipv ? pitch : -pitch) / 26)) : 0);
   for (const [id, pid] of [['#tilt-dot', '#pad2d'], ['#tilt-dot2', '#pad2d-2']]) {
     const d = $(id); if (!d) continue;
     d.style.left = `calc(${50 + 44 * lr}% - 8px)`; d.style.top = `calc(${50 - 40 * ud}% - 8px)`;

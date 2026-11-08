@@ -89,3 +89,14 @@ button { font: inherit; color: inherit; }
 .pb.kick { border-color: #ffe14d; }
 .pb.special small { color: inherit; opacity: .8; }
 .linkbtn { background: none; border: none; color: var(--muted); font-size: 14px; text-decoration: underline; min-height: 44px; cursor: pointer; }
+
+.gripbox { display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #120b2e; border: 3px solid var(--line); }
+.gripbox .seg { margin: 0; }
+.gripbox .seg button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; min-height: 60px; }
+.gripbox .seg button small { font-weight: 500; font-size: 12px; opacity: .85; }
+/* Fist grip: you can't see the screen, so the buttons become three full-width bands you find by feel.
+   Top band (index finger) = KICK, middle = BLOCK (hold), bottom (pinky) = SPECIAL. */
+body.fist #s-fight #cheat, body.fist #s-fight #pad2d-2, body.fist #s-fight #flashmsg, body.fist #s-fight .linkbtn { display: none; }
+body.fist #s-fight .pad.main { flex: 1; grid-template-columns: 1fr; grid-template-rows: 1fr 1fr 1fr; margin-top: 8px; }
+body.fist #s-fight .pad.main .pb { min-height: 0; grid-row: auto; font-size: 18px; }
+body.fist #s-fight .pad.main .kick { order: 1; } body.fist #s-fight .pad.main .block { order: 2; } body.fist #s-fight .pad.main .special { order: 3; }

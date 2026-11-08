@@ -29,18 +29,25 @@ Netlify Drop and Vercel also work. Any HTTPS static host is fine.
 3. Pick a fighter, test your tilt, then hit **READY**. With only one phone, hit **SOLO vs CPU**.
 4. Best of 3 rounds, 60 seconds each. Empty the other player's bar to K.O. them.
 
-### Controls (hold the phone upright in portrait, like you're gripping it)
+### Grip
+
+Pick a grip on the phone before you ready up. Whatever position you're holding the phone in when you tap READY becomes neutral, and it resets every round.
+
+- **Upright:** screen facing you, like holding a remote.
+- **Fist:** screen facing the floor, top of the phone pointing at the screen, punching like a real jab. You can't see the screen in this grip, so the buttons become three full-width bands you find by feel: **top = KICK, middle = BLOCK (hold), bottom = SPECIAL**.
+
+### Controls
 
 | Move | How |
 |---|---|
 | Walk | Tilt left / right |
-| Jump | Tip the top of the phone up (tip it back to centre before the next jump). Tilt sideways while jumping to jump forward or back |
-| Duck | Drop the phone down quickly; lift it back up to stand (you also stand up on your own after 2.5 s). Ducking makes punches miss you |
-| Punch | Jab the phone forward |
-| Uppercut | Duck + jab. Launches the opponent into the air |
+| Punch | Thrust the phone forward |
+| Jump | Tip the top of the phone up/away (fist grip: raise your knuckles), then back to level before the next jump. Tilt sideways mid-jump to jump forward or back |
+| Duck | Drop the phone down quickly; lift it back up to stand (you also stand on your own after 2.5 s). Punches miss you while you're ducking |
+| Uppercut | Duck + punch. Launches the opponent |
 | Kick | KICK button |
-| Sweep | Duck + KICK. Knocks them off their feet, but they can jump over it |
-| Air attacks | Jab or KICK while jumping |
+| Sweep | Duck + KICK. Knocks them down, but they can jump over it |
+| Air attacks | Punch or KICK while jumping |
 | Block | Hold BLOCK (duck while blocking for a low block) |
 | Special | SPECIAL button when the meter is full. Kira: Volt Dash · Brick: Ground Pound |
 
