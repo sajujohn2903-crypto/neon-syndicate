@@ -34,8 +34,8 @@ Netlify Drop and Vercel also work. Any HTTPS static host is fine.
 | Move | How |
 |---|---|
 | Walk | Tilt left / right |
-| Jump | Tip the phone up (tip it back to centre before the next jump). Tilt sideways while jumping to jump forward or back |
-| Duck | Hold the phone tipped down. Ducking makes punches miss you |
+| Jump | Lift the phone up quickly. Tilt sideways while jumping to jump forward or back |
+| Duck | Drop the phone down quickly; lift it back up to stand (you also stand up on your own after 2.5 s). Ducking makes punches miss you |
 | Punch | Jab the phone forward |
 | Uppercut | Duck + jab. Launches the opponent into the air |
 | Kick | KICK button |
@@ -46,7 +46,9 @@ Netlify Drop and Vercel also work. Any HTTPS static host is fine.
 
 **Combos:** once an attack lands, your next press flows straight into the next one. Punch → kick → uppercut → special is the big chain. Presses made while you're busy are remembered for a moment, so tap the next move a little early.
 
-Use **Re-centre motion** if jump or duck start firing on their own. The game also re-centres at the start of every round. If tilt directions feel backwards, flip them in Controls & sensitivity. **Buttons** mode is there as a fallback.
+If left/right or up/down feel backwards, flip them in Controls & sensitivity, and use the Low/Med/High setting if moves fire too easily or not enough.
+
+The phone's volume buttons can't be used: iPhone Safari doesn't tell web pages when they're pressed. That would need a native iOS app. **Buttons** mode is there as a fallback.
 
 ### Testing without phones (keyboard)
 

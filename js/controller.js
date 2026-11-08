@@ -135,48 +135,68 @@ function hitFeedback(kind) {
 }
 
 // ---------- input: tilt + gestures ----------
-// Tilt comes from the gravity direction (works at any holding angle); the jab comes from sudden forward motion.
-let roll = 0, pitch = 0, pitch0 = 0, haveGrav = false;
+// Tilt left/right (from the gravity direction) moves you. Quick motions do the rest:
+//   jab forward (along the screen's axis) = punch
+//   lift the phone up = jump · drop it down = duck (lift back up to stand)
+let roll = 0, haveGrav = false;
 let mx = 0, block = false, duck = false, holdLeft = false, holdRight = false, holdDuck = false;
-let upArmed = true, cooldownUntil = 0, freezeUntil = 0;
+let jabUntil = 0, vertUntil = 0, freezeUntil = 0, duckUntil = 0;
 const grav = { x: 0, y: -9.8, z: 0 }, lp = { x: 0, y: 0, z: 0 };
-const UP_ON = 20, UP_RESET = 10, DUCK_ON = 16, DUCK_OFF = 10;
+const VTHRESH = { low: 13, med: 9.5, high: 7 };
+const DUCK_MAX_MS = 2500;
 
 function startSensors() { addEventListener('devicemotion', onMotion); }
-function recenter() { pitch0 = pitch; upArmed = true; }
-$('#btn-recenter').addEventListener('click', () => { recenter(); flashText('CENTRED', 600); });
+function recenter() { }
+
+function lobbyNote(t) { const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = t; }
+function fightAct(a, label) { if (settings.mode === 'motion' && state.phase === 'fight') { send({ t: 'act', a }); flashText(label, 400); } lobbyNote(label); }
 
 function onMotion(e) {
   const g = e.accelerationIncludingGravity;
   const now = performance.now();
   let a = e.acceleration;
-  if (g && g.x != null) {
-    if (!a || a.x == null) { // no separate linear acceleration: estimate it
-      lp.x = lp.x * 0.85 + g.x * 0.15; lp.y = lp.y * 0.85 + g.y * 0.15; lp.z = lp.z * 0.85 + g.z * 0.15;
-      a = { x: g.x - lp.x, y: g.y - lp.y, z: g.z - lp.z };
-    }
-    // gravity = total minus the hand's own motion, smoothed
-    if (now > freezeUntil) {
-      const k = haveGrav ? 0.25 : 1;
-      grav.x += ((g.x - a.x) - grav.x) * k; grav.y += ((g.y - a.y) - grav.y) * k; grav.z += ((g.z - a.z) - grav.z) * k;
-      roll = Math.atan2(grav.x, Math.hypot(grav.y, grav.z)) * 180 / Math.PI;
-      pitch = Math.atan2(grav.z, Math.abs(grav.y)) * 180 / Math.PI;
-      if (!haveGrav) { haveGrav = true; pitch0 = pitch; }
-    }
+  if (!g || g.x == null) return;
+  if (!a || a.x == null) { // no separate linear acceleration: estimate it
+    lp.x = lp.x * 0.85 + g.x * 0.15; lp.y = lp.y * 0.85 + g.y * 0.15; lp.z = lp.z * 0.85 + g.z * 0.15;
+    a = { x: g.x - lp.x, y: g.y - lp.y, z: g.z - lp.z };
   }
-  if (!a || a.z == null) return;
-  // JAB: a hard push straight forward/back along the screen's axis
-  if (now < cooldownUntil) return;
-  const ax = Math.abs(a.x), ay = Math.abs(a.y), az = Math.abs(a.z), T = THRESH[settings.sens];
-  if (az > T && az > 1.3 * Math.max(ax, ay)) {
-    cooldownUntil = now + 260; freezeUntil = now + 320;   // hold tilt still so the jab doesn't also move/jump you
-    if (settings.mode === 'motion' && state.phase === 'fight') { send({ t: 'act', a: 'punch' }); flashText(duck ? 'UPPERCUT!' : 'PUNCH!', 400); }
-    const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = duck ? 'UPPERCUT!' : 'PUNCH!';
+  if (now > freezeUntil) {
+    const k = haveGrav ? 0.2 : 1;
+    grav.x += ((g.x - a.x) - grav.x) * k; grav.y += ((g.y - a.y) - grav.y) * k; grav.z += ((g.z - a.z) - grav.z) * k;
+    roll = Math.atan2(grav.x, Math.hypot(grav.y, grav.z)) * 180 / Math.PI;
+    haveGrav = true;
+  }
+  
+  // split the hand's motion into "up/down" (along gravity) and "forward" (screen axis)
+  const gl = Math.hypot(grav.x, grav.y, grav.z) || 1;
+  const ux = grav.x / gl, uy = grav.y / gl, uz = grav.z / gl;
+  let up = a.x * ux + a.y * uy + a.z * uz;            // same sign convention as gravity, so + = upward on every phone
+  if (settings.flipv) up = -up;
+  const hx = a.x - up * ux, hy = a.y - up * uy, hz = a.z - up * uz;
+  const horiz = Math.hypot(hx, hy, hz);
+  const fwd = Math.abs(a.z);
+
+  // PUNCH: hard push along the screen axis
+  if (now > jabUntil && fwd > THRESH[settings.sens] && fwd > 1.3 * Math.max(Math.abs(a.x), Math.abs(a.y))) {
+    jabUntil = now + 260; vertUntil = Math.max(vertUntil, now + 300); freezeUntil = now + 320;
+    fightAct('punch', duck ? 'UPPERCUT!' : 'PUNCH!');
+    return;
+  }
+  // JUMP / DUCK: quick move up or down. The first push decides; the stop-jolt that follows is ignored.
+  const VT = VTHRESH[settings.sens];
+  if (now > vertUntil && Math.abs(up) > VT && Math.abs(up) > 1.2 * horiz) {
+    vertUntil = now + 420; freezeUntil = now + 450; jabUntil = Math.max(jabUntil, now + 200);
+    if (up > 0) {
+      if (duck) { duck = false; lobbyNote('STAND'); if (state.phase === 'fight' && settings.mode === 'motion') flashText('STAND', 300); }
+      else fightAct('jump', 'JUMP!');
+    } else {
+      duck = true; duckUntil = now + DUCK_MAX_MS; lobbyNote('DUCK');
+      if (state.phase === 'fight' && settings.mode === 'motion') flashText('DUCK', 400);
+    }
   }
 }
 
 function tiltLR() { return settings.flip ? -roll : roll; }
-function tiltUD() { const d = pitch - pitch0; return settings.flipv ? -d : d; }
 
 function updateMotion() {
   if (settings.mode === 'buttons') {
@@ -184,24 +204,18 @@ function updateMotion() {
   }
   const g = tiltLR(), dz = 8, full = 26;
   mx = Math.abs(g) < dz ? 0 : Math.max(-1, Math.min(1, (g - Math.sign(g) * dz) / (full - dz)));
-  const v = tiltUD();
-  // duck: hold the phone tipped down (hysteresis so it doesn't flicker)
-  duck = duck ? v < -DUCK_OFF : v < -DUCK_ON;
-  // jump: tip it up once; tip back to neutral before the next jump
-  if (upArmed && v > UP_ON) { upArmed = false; if (state.phase === 'fight') { send({ t: 'act', a: 'jump' }); flashText('JUMP!', 350); } const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = 'JUMP!'; }
-  if (!upArmed && v < UP_RESET) upArmed = true;
-  if (!$('#s-lobby').hidden && duck) { const gt = $('#gesture-test'); if (gt) gt.textContent = 'DUCKING'; }
+  if (duck && performance.now() > duckUntil) duck = false;   // safety: never stay stuck ducking
 }
 
 let lastSent = '';
 setInterval(() => {
   updateMotion();
   const lr = settings.mode === 'buttons' ? mx : Math.max(-1, Math.min(1, tiltLR() / 26));
-  const ud = settings.mode === 'buttons' ? (duck ? -1 : 0) : Math.max(-1, Math.min(1, tiltUD() / 26));
+  const ud = duck ? -1 : 0;
   for (const [id, pid] of [['#tilt-dot', '#pad2d'], ['#tilt-dot2', '#pad2d-2']]) {
     const d = $(id); if (!d) continue;
     d.style.left = `calc(${50 + 44 * lr}% - 8px)`; d.style.top = `calc(${50 - 40 * ud}% - 8px)`;
-    const p = $(pid); p.classList.toggle('duck', duck); p.classList.toggle('jump', !upArmed && settings.mode === 'motion');
+    const p = $(pid); p.classList.toggle('duck', duck); p.classList.toggle('jump', false);
   }
   const msg = { t: 'in', mx: Math.round(mx * 100) / 100, block, duck };
   const k = msg.mx + '|' + block + '|' + duck;
