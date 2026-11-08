@@ -31,24 +31,29 @@ Netlify Drop and Vercel also work. Any HTTPS static host is fine.
 
 ### Controls (hold the phone upright in portrait, like you're gripping it)
 
-| Move | Motion | Notes |
-|---|---|---|
-| Walk | Tilt left / right | Flip the direction in settings if it feels backwards |
-| Punch | Jab the phone forward | Fast, short range |
-| Uppercut | Flick upward | Launches the opponent; hits jumpers |
-| Kick | Swing sideways | Longer reach, slower |
-| Jump | JUMP button | Punch or kick in the air for air attacks |
-| Block | Hold BLOCK | Take only chip damage |
-| Special | SPECIAL button when the meter is full | Kira: Volt Dash · Brick: Ground Pound (jump over it!) |
+| Move | How |
+|---|---|
+| Walk | Tilt left / right |
+| Jump | Tip the phone up (tip it back to centre before the next jump). Tilt sideways while jumping to jump forward or back |
+| Duck | Hold the phone tipped down. Ducking makes punches miss you |
+| Punch | Jab the phone forward |
+| Uppercut | Duck + jab. Launches the opponent into the air |
+| Kick | KICK button |
+| Sweep | Duck + KICK. Knocks them off their feet, but they can jump over it |
+| Air attacks | Jab or KICK while jumping |
+| Block | Hold BLOCK (duck while blocking for a low block) |
+| Special | SPECIAL button when the meter is full. Kira: Volt Dash · Brick: Ground Pound |
 
-The meter fills when you land hits and when you take them. If motion is unreliable on a phone, switch to **Buttons** mode in Controls & sensitivity.
+**Combos:** once an attack lands, your next press flows straight into the next one. Punch → kick → uppercut → special is the big chain. Presses made while you're busy are remembered for a moment, so tap the next move a little early.
+
+Use **Re-centre motion** if jump or duck start firing on their own. The game also re-centres at the start of every round. If tilt directions feel backwards, flip them in Controls & sensitivity. **Buttons** mode is there as a fallback.
 
 ### Testing without phones (keyboard)
 
 Press **Enter** in the lobby to start a keyboard match, or **C** to fight the CPU.
 
-- P1: A/D move, W jump, S block, F punch, G kick, R uppercut, E special
-- P2: ←/→ move, ↑ jump, ↓ block, K punch, L kick, I uppercut, O special
+- P1: A/D move, W jump, S duck, Q block, F punch, G kick, E special
+- P2: ←/→ move, ↑ jump, ↓ duck, J block, K punch, L kick, O special
 
 The projector remote's OK button also starts a match from the lobby.
 

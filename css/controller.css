@@ -74,3 +74,18 @@ button { font: inherit; color: inherit; }
 .pad[hidden], .cheat[hidden] { display: none; }
 .cheat { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; text-align: center; font-size: 13px; color: var(--muted); }
 .cheat b { display: block; font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--cyan); margin-bottom: 6px; font-weight: 400; }
+
+.pad2d { position: relative; height: 150px; background: var(--bg2); border: 3px solid var(--line); }
+.pad2d.small2d { height: 96px; }
+.pad2d::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.pad2d::after { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: var(--line); }
+.pad2d .zone-up, .pad2d .lbl { position: absolute; left: 0; right: 0; text-align: center; font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--muted); }
+.pad2d .lbl.up { top: 6px; } .pad2d .lbl.dn { bottom: 6px; }
+.pad2d .dot { width: 16px; height: 16px; top: calc(50% - 8px); left: calc(50% - 8px); transition: left 60ms linear, top 60ms linear; z-index: 1; }
+.pad2d.jump { border-color: var(--cyan); } .pad2d.duck { border-color: var(--pink); }
+.cheat { grid-template-columns: repeat(3, 1fr); row-gap: 12px; }
+.pad#pad-buttons { grid-template-columns: repeat(3, 1fr); }
+.pad.main { grid-template-columns: 1fr 1fr; }
+.pb.kick { border-color: #ffe14d; }
+.pb.special small { color: inherit; opacity: .8; }
+.linkbtn { background: none; border: none; color: var(--muted); font-size: 14px; text-decoration: underline; min-height: 44px; cursor: pointer; }

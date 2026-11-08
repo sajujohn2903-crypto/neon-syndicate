@@ -76,20 +76,35 @@ const SFX = {
 
 // ---------- moves ----------
 // frames at 60fps: startup, active, recovery. reach in art px from body centre.
+// high: ducked under by a crouching opponent. low: misses anyone in the air.
 const MOVES = {
-  punch:   { s: 4,  a: 4, r: 9,  dmg: 6,  reach: [6, 21], stun: 14, kb: 1.4, meter: 8 },
-  kick:    { s: 8,  a: 5, r: 15, dmg: 9,  reach: [8, 25], stun: 17, kb: 2.0, meter: 10 },
-  upper:   { s: 7,  a: 5, r: 20, dmg: 11, reach: [4, 15], stun: 30, kb: 1.0, meter: 12, launch: -3.0, hitsAir: true },
-  airpunch:{ s: 3,  a: 6, r: 6,  dmg: 5,  reach: [4, 21], stun: 12, kb: 1.2, meter: 6, hitsAir: true },
-  airkick: { s: 5,  a: 7, r: 8,  dmg: 8,  reach: [6, 25], stun: 15, kb: 1.8, meter: 8, hitsAir: true },
-  special: { s: 10, a: 14, r: 18, dmg: 20, reach: [0, 14], stun: 34, kb: 3.0, meter: 0, launch: -2.2 },
+  punch:   { s: 4,  a: 4, r: 9,  dmg: 6,  reach: [6, 21], stun: 16, kb: 1.2, meter: 8, high: true },
+  kick:    { s: 7,  a: 5, r: 14, dmg: 9,  reach: [8, 25], stun: 18, kb: 2.0, meter: 10 },
+  upper:   { s: 6,  a: 5, r: 18, dmg: 11, reach: [4, 16], stun: 30, kb: 1.0, meter: 12, launch: -3.0, hitsAir: true },
+  sweep:   { s: 7,  a: 5, r: 16, dmg: 8,  reach: [6, 25], stun: 32, kb: 0.8, meter: 10, launch: -1.6, low: true },
+  airpunch:{ s: 3,  a: 6, r: 6,  dmg: 5,  reach: [4, 21], stun: 14, kb: 1.2, meter: 6, hitsAir: true },
+  airkick: { s: 5,  a: 7, r: 8,  dmg: 8,  reach: [6, 25], stun: 16, kb: 1.8, meter: 8, hitsAir: true },
+  special: { s: 10, a: 14, r: 18, dmg: 20, reach: [0, 14], stun: 34, kb: 3.0, meter: 0, launch: -2.2, hitsAir: true },
 };
+// What each move can be cancelled into once it has landed (this is what makes combos flow).
+const CANCELS = {
+  punch: ['punch', 'kick', 'upper', 'sweep', 'special'],
+  kick: ['upper', 'sweep', 'special'],
+  sweep: ['upper', 'special'],
+  upper: ['special'],
+  airpunch: ['airkick', 'special'],
+  airkick: ['special'],
+  special: [],
+};
+const BUFFER = 14; // frames a button press is remembered while you're busy
 
 // ---------- players / inputs ----------
+function freshInput() { return { mx: 0, block: false, duck: false, q: [] }; }
 const slots = {
-  1: { conn: null, fighter: 'kira', ready: false, cpu: false, input: { mx: 0, block: false, q: [] } },
-  2: { conn: null, fighter: 'brick', ready: false, cpu: false, input: { mx: 0, block: false, q: [] } },
+  1: { conn: null, fighter: 'kira', ready: false, cpu: false, input: freshInput() },
+  2: { conn: null, fighter: 'brick', ready: false, cpu: false, input: freshInput() },
 };
+function pushAct(s, a) { slots[s].input.q.push({ a, age: 0 }); }
 
 function makeFighter(slot, key, x, facing, palKey) {
   const f = FIGHTERS[key];
@@ -114,29 +129,57 @@ function setPhase(p) { phase = p; phaseT = 0; broadcastState(); }
 
 // ---------- fighter update ----------
 function onGround(f) { return f.y >= 0; }
+function startupOf(f) { const m = MOVES[f.move]; return m.s + (f.move === 'special' ? 0 : f.def.startup); }
+
+// Turn a button press into the move it means right now (ducking + punch = uppercut, etc.)
+function resolveAct(f, inp, a) {
+  if (a === 'special') return 'special';
+  if (a === 'jump') return onGround(f) ? 'jump' : null;
+  if (!onGround(f)) return a === 'punch' ? 'airpunch' : a === 'kick' ? 'airkick' : a === 'upper' ? 'airpunch' : null;
+  if (inp.duck) return a === 'punch' ? 'upper' : a === 'kick' ? 'sweep' : a;
+  return a;
+}
+
+// Take the oldest press that can be used now. Special with an empty meter is dropped with a message.
+function takeAct(f, inp, allowed) {
+  for (let i = 0; i < inp.q.length; i++) {
+    const mv = resolveAct(f, inp, inp.q[i].a);
+    if (!mv) { inp.q.splice(i--, 1); continue; }
+    if (mv === 'special' && f.sp < 100) { inp.q.splice(i--, 1); send(f.slot, { t: 'nometer' }); continue; }
+    if (allowed && !allowed.includes(mv)) continue;
+    inp.q.splice(i, 1); return mv;
+  }
+  return null;
+}
 
 function startMove(f, name) {
-  if (name === 'special') { if (f.sp < 100) return; f.sp = 0; SFX.special(); }
+  if (name === 'special') { f.sp = 0; SFX.special(); send(f.slot, { t: 'special' }); }
   else SFX.whoosh();
   f.state = 'attack'; f.move = name; f.t = 0; f.hasHit = false;
 }
 
+function doJump(f, inp) { f.vy = -3.3; f.y = -0.1; f.state = 'jump'; f.jumpDir = Math.sign(inp.mx) || 0; blip(300, 0.08, 'square', 0.05, 200); }
+
 function updateFighter(f, o, inp) {
   if (f.flash > 0) f.flash--;
   if (f.comboShow > 0) f.comboShow--;
+  for (const e of inp.q) e.age++;
+  inp.q = inp.q.filter(e => e.age <= BUFFER);
   // gravity
   if (!onGround(f) || f.vy < 0) { f.vy += 0.2; f.y += f.vy; if (f.y >= 0) { f.y = 0; f.vy = 0; if (f.state === 'jump') f.state = 'idle'; } }
+  // air control (tilt while jumping steers you)
+  if (!onGround(f) && f.state !== 'hit' && f.state !== 'ko') f.x += 0.8 * f.def.speed * (inp.mx || 0);
 
   if (f.state === 'ko') { f.x += f.kb; f.kb *= 0.9; return; }
 
   if (f.state === 'hit' || f.state === 'blockstun') {
     f.x += f.kb; f.kb *= 0.85;
     if (--f.stun <= 0 && onGround(f)) { f.state = 'idle'; o.combo = 0; }
-    inp.q.length = 0; return;
+    return;
   }
 
   if (f.state === 'attack') {
-    const m = MOVES[f.move]; const su = m.s + (f.move === 'special' ? 0 : f.def.startup);
+    const m = MOVES[f.move]; const su = startupOf(f);
     f.t++;
     if (f.move === 'special' && f.key === 'kira' && f.t > su && f.t <= su + m.a) f.x += f.facing * 3.2;
     if (f.move === 'special' && f.key === 'brick' && f.t === su) {
@@ -144,28 +187,38 @@ function updateFighter(f, o, inp) {
     }
     const brickSpecial = f.move === 'special' && f.key === 'brick';
     if (!brickSpecial && !f.hasHit && f.t > su && f.t <= su + m.a) tryHit(f, o, m);
+    // combo cancel: once a move lands, the next press flows straight into the next move
+    if (f.hasHit && f.t > su && phase === 'fight') {
+      const next = takeAct(f, inp, CANCELS[f.move]);
+      if (next) { startMove(f, next); return; }
+    }
     if (f.t >= su + m.a + m.r) { f.state = onGround(f) ? 'idle' : 'jump'; f.move = null; }
-    inp.q.length = 0; return;
+    else return;
   }
 
   // free to act
   if (o.state !== 'ko' && phase === 'fight') f.facing = o.x >= f.x ? 1 : -1;
-  const act = inp.q.shift();
-  inp.q.length = 0;
-  if (phase !== 'fight') { f.state = onGround(f) ? 'idle' : 'jump'; return; }
+  if (phase !== 'fight') { inp.q.length = 0; f.state = onGround(f) ? 'idle' : 'jump'; return; }
 
-  if (inp.block && onGround(f)) { f.state = 'block'; return; }
-  if (f.state === 'block') f.state = 'idle';
-
-  if (act === 'jump' && onGround(f)) { f.vy = -3.3; f.y = -0.1; f.state = 'jump'; blip(300, 0.08, 'square', 0.05, 200); return; }
-  if (act) {
-    if (!onGround(f)) { if (act === 'punch') return startMove(f, 'airpunch'); if (act === 'kick') return startMove(f, 'airkick'); }
-    else return startMove(f, act);
+  if (inp.block && onGround(f)) {
+    f.state = inp.duck ? 'crouchblock' : 'block';
+    // special still fires from block (so you can't get stuck holding it)
+    const sp = takeAct(f, inp, ['special']); if (sp) startMove(f, sp);
+    return;
   }
-  const sp = 0.9 * f.def.speed * (inp.mx || 0);
-  f.x += sp;
-  if (onGround(f)) { if (Math.abs(inp.mx) > 0.15) { f.state = 'walk'; f.walkT++; } else f.state = 'idle'; }
+
+  const act = takeAct(f, inp, null);
+  if (act === 'jump') { doJump(f, inp); return; }
+  if (act) { startMove(f, act); return; }
+
+  if (onGround(f) && inp.duck) { f.state = 'crouch'; return; }
+  if (onGround(f)) {
+    f.x += 0.9 * f.def.speed * (inp.mx || 0);
+    if (Math.abs(inp.mx) > 0.15) { f.state = 'walk'; f.walkT++; } else f.state = 'idle';
+  }
 }
+
+function isDucking(f) { return f.state === 'crouch' || f.state === 'crouchblock'; }
 
 function hurtCheck(att, def, m) {
   const d = (def.x - att.x) * att.facing;
@@ -173,6 +226,8 @@ function hurtCheck(att, def, m) {
   const dy = def.y - att.y;
   if (dy < -22 && !m.hitsAir) return false;  // target far above
   if (dy < -30) return false;
+  if (m.high && onGround(att) && isDucking(def)) return false;   // ducked under it
+  if (m.low && def.y < -6) return false;                          // jumped over it
   return true;
 }
 
@@ -184,7 +239,7 @@ function tryHit(att, def, m) {
 
 function applyHit(att, def, m, hx, hy) {
   const from = Math.sign(hx - def.x) || -def.facing;
-  const blocking = (def.state === 'block' || def.state === 'blockstun') && def.facing === from;
+  const blocking = (def.state === 'block' || def.state === 'crouchblock' || def.state === 'blockstun') && def.facing === from;
   const dir = Math.sign(def.x - att.x) || att.facing;
   if (blocking) {
     const chip = Math.max(1, Math.round(m.dmg * 0.15));
@@ -241,32 +296,36 @@ function separate() {
 }
 
 // ---------- CPU ----------
-const cpuMem = { 1: { blockT: 0, cd: 0 }, 2: { blockT: 0, cd: 0 } };
+const cpuMem = { 1: { blockT: 0, cd: 0, duckT: 0 }, 2: { blockT: 0, cd: 0, duckT: 0 } };
 function cpuThink(slotN, me, foe) {
   const inp = slots[slotN].input, mem = cpuMem[slotN];
-  inp.mx = 0; inp.block = false;
+  inp.mx = 0; inp.block = false; inp.duck = false;
   if (phase !== 'fight' || me.state === 'ko') return;
   const d = Math.abs(foe.x - me.x), dir = Math.sign(foe.x - me.x);
+  if (mem.duckT > 0) { mem.duckT--; inp.duck = true; }
   if (mem.blockT > 0) { mem.blockT--; inp.block = true; return; }
-  if (foe.state === 'attack' && d < 32 && Math.random() < 0.06) { mem.blockT = 18; inp.block = true; return; }
-  if (mem.cd > 0) { mem.cd--; }
-  if (d > 22) inp.mx = dir * (Math.random() < 0.85 ? 1 : 0);
+  if (foe.state === 'attack' && d < 32 && Math.random() < 0.06) {
+    if (foe.move === 'punch' && Math.random() < 0.5) { mem.duckT = 16; inp.duck = true; } else { mem.blockT = 18; inp.block = true; return; }
+  }
+  if (mem.cd > 0) mem.cd--;
+  if (d > 22 && !inp.duck) inp.mx = dir * (Math.random() < 0.85 ? 1 : 0);
   else if (d < 12 && Math.random() < 0.03) inp.mx = -dir;
   if (mem.cd <= 0 && me.state !== 'attack') {
     const r = Math.random();
-    if (me.sp >= 100 && d < 45 && r < 0.05) { inp.q.push('special'); mem.cd = 40; }
-    else if (d < 22 && r < 0.05) { inp.q.push('punch'); mem.cd = 14 + Math.random() * 20; }
-    else if (d < 27 && r < 0.08) { inp.q.push('kick'); mem.cd = 20 + Math.random() * 25; }
-    else if (d < 16 && r < 0.1) { inp.q.push('upper'); mem.cd = 30; }
-    else if (r < 0.006) { inp.q.push('jump'); mem.cd = 30; }
+    const press = a => inp.q.push({ a, age: 0 });
+    if (me.sp >= 100 && d < 45 && r < 0.05) { press('special'); mem.cd = 40; }
+    else if (d < 22 && r < 0.05) { press('punch'); if (Math.random() < 0.4) press('kick'); mem.cd = 14 + Math.random() * 20; }
+    else if (d < 27 && r < 0.08) { press('kick'); mem.cd = 20 + Math.random() * 25; }
+    else if (d < 25 && r < 0.1) { mem.duckT = 10; inp.duck = true; press(Math.random() < 0.5 ? 'punch' : 'kick'); mem.cd = 30; }
+    else if (r < 0.006) { press('jump'); mem.cd = 30; }
   }
 }
 
 // ---------- keyboard (testing + projector remote) ----------
 const keys = new Set();
 const KEYMAP = {
-  1: { left: 'KeyA', right: 'KeyD', jump: 'KeyW', block: 'KeyS', punch: 'KeyF', kick: 'KeyG', upper: 'KeyR', special: 'KeyE' },
-  2: { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp', block: 'ArrowDown', punch: 'KeyK', kick: 'KeyL', upper: 'KeyI', special: 'KeyO' },
+  1: { left: 'KeyA', right: 'KeyD', jump: 'KeyW', duck: 'KeyS', block: 'KeyQ', punch: 'KeyF', kick: 'KeyG', special: 'KeyE' },
+  2: { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp', duck: 'ArrowDown', block: 'KeyJ', punch: 'KeyK', kick: 'KeyL', special: 'KeyO' },
 };
 let keyboardUsed = { 1: false, 2: false };
 addEventListener('keydown', e => {
@@ -275,8 +334,8 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   for (const s of [1, 2]) {
     const km = KEYMAP[s];
-    for (const a of ['jump', 'punch', 'kick', 'upper', 'special']) if (e.code === km[a]) { keyboardUsed[s] = true; slots[s].input.q.push(a); }
-    if ([km.left, km.right, km.block].includes(e.code)) keyboardUsed[s] = true;
+    for (const a of ['jump', 'punch', 'kick', 'special']) if (e.code === km[a]) { keyboardUsed[s] = true; pushAct(s, a); }
+    if ([km.left, km.right, km.block, km.duck].includes(e.code)) keyboardUsed[s] = true;
   }
   if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') confirmPressed();
   if (e.code === 'KeyC' && phase === 'lobby') { slots[2].cpu = true; slots[2].ready = true; slots[1].ready = true; tryStart(); }
@@ -289,6 +348,7 @@ function keyboardInputs() {
     const km = KEYMAP[s], inp = slots[s].input;
     inp.mx = (keys.has(km.right) ? 1 : 0) - (keys.has(km.left) ? 1 : 0);
     inp.block = keys.has(km.block);
+    inp.duck = keys.has(km.duck);
   }
 }
 function confirmPressed() {
@@ -337,15 +397,15 @@ function initNet() {
       broadcastState();
     });
     conn.on('data', msg => onMsg(conn, msg));
-    conn.on('close', () => { const s = conn.slot; if (s && slots[s].conn === conn) { slots[s].conn = null; slots[s].ready = false; slots[s].input = { mx: 0, block: false, q: [] }; broadcastState(); } });
+    conn.on('close', () => { const s = conn.slot; if (s && slots[s].conn === conn) { slots[s].conn = null; slots[s].ready = false; slots[s].input = freshInput(); broadcastState(); } });
   });
 }
 
 function onMsg(conn, m) {
   const s = conn.slot; if (!s || !m) return; const sl = slots[s];
   switch (m.t) {
-    case 'in': sl.input.mx = Math.max(-1, Math.min(1, +m.mx || 0)); sl.input.block = !!m.block; break;
-    case 'act': if (['jump', 'punch', 'kick', 'upper', 'special'].includes(m.a)) sl.input.q.push(m.a); break;
+    case 'in': sl.input.mx = Math.max(-1, Math.min(1, +m.mx || 0)); sl.input.block = !!m.block; sl.input.duck = !!m.duck; break;
+    case 'act': if (['jump', 'punch', 'kick', 'special'].includes(m.a)) pushAct(s, m.a); break;
     case 'pick': if (FIGHTERS[m.f] && (phase === 'lobby' || phase === 'over')) { sl.fighter = m.f; broadcastState(); } break;
     case 'ready':
       if (phase === 'over') { backToLobbyOrRematch(); }
@@ -451,11 +511,13 @@ function poseFor(f) {
     case 'walk': return (Math.floor(f.walkT / 8) % 2) ? 'walk' : 'idle';
     case 'jump': return 'jump';
     case 'block': case 'blockstun': return 'block';
+    case 'crouch': return 'crouch';
+    case 'crouchblock': return 'crouchblock';
     case 'hit': return 'hit';
     case 'ko': return 'ko';
     case 'attack': {
       const m = MOVES[f.move]; const su = m.s + (f.move === 'special' ? 0 : f.def.startup);
-      if (f.t <= Math.max(1, su - 2)) return 'idle';
+      if (f.t <= Math.max(1, su - 2)) return f.move === 'sweep' ? 'crouch' : 'idle';
       if (f.move === 'special') return f.key === 'brick' ? (f.t < su ? 'upper' : 'block') : 'special';
       return f.move;
     }
@@ -472,7 +534,7 @@ function drawFighter(f) {
     dx = Math.round(f.x - img.width / 2); dy = Math.round(GROUND + f.y - 33);
   } else {
     const ax = f.facing === 1 ? ANCHOR_X : img.width - 1 - ANCHOR_X;
-    const bob = (f.state === 'idle' && Math.floor(phaseT / 20) % 2) ? 1 : 0;
+    const bob = ((f.state === 'idle' || f.state === 'crouch') && Math.floor(phaseT / 20) % 2) ? 1 : 0;
     const lean = f.state === 'hit' ? -f.facing * 2 : 0;
     dx = Math.round(f.x - ax + lean); dy = Math.round(GROUND + f.y - FEET_Y + bob);
   }

@@ -9,7 +9,7 @@ const store = {
 };
 const device = store.get('device', null) || (() => { const id = Math.random().toString(36).slice(2, 10); store.set('device', id); return id; })();
 
-const settings = { mode: store.get('mode', 'motion'), sens: store.get('sens', 'med'), flip: store.get('flip', false) };
+const settings = { mode: store.get('mode', 'motion'), sens: store.get('sens', 'med'), flip: store.get('flip', false), flipv: store.get('flipv', false) };
 const THRESH = { low: 19, med: 14, high: 10 };
 
 let peer = null, conn = null, room = '', mySlot = 0, state = { phase: 'lobby' }, myFighter = 'kira';
@@ -72,20 +72,24 @@ function onMsg(m) {
   if (m.t === 'full') { $('#join-err').textContent = 'This game already has 2 players.'; show('s-join'); return; }
   if (m.t === 'you') { mySlot = m.slot; myFighter = m.fighter; $('#who').textContent = 'P' + m.slot; markCard(); show('s-lobby'); applyMode(); }
   if (m.t === 'buzz') { hitFeedback(m.k); }
+  if (m.t === 'nometer') { flashText('METER NOT FULL', 700); }
+  if (m.t === 'special') { flashText('SPECIAL!', 700); }
   if (m.t === 'st') { state = m; render(); }
 }
 
 // ---------- lobby ----------
 function markCard() { $$('.card').forEach(c => c.classList.toggle('on', c.dataset.f === myFighter)); }
 $$('.card').forEach(c => c.addEventListener('click', () => { myFighter = c.dataset.f; markCard(); send({ t: 'pick', f: myFighter }); }));
-$('#btn-ready').addEventListener('click', () => send({ t: 'ready' }));
-$('#btn-solo').addEventListener('click', () => send({ t: 'ready', solo: true }));
+$('#btn-ready').addEventListener('click', () => { recenter(); send({ t: 'ready' }); });
+$('#btn-solo').addEventListener('click', () => { recenter(); send({ t: 'ready', solo: true }); });
 $('#btn-rematch').addEventListener('click', () => send({ t: 'ready' }));
 
 $$('[data-mode]').forEach(b => b.addEventListener('click', () => { settings.mode = b.dataset.mode; store.set('mode', settings.mode); applyMode(); }));
 $$('[data-sens]').forEach(b => b.addEventListener('click', () => { settings.sens = b.dataset.sens; store.set('sens', settings.sens); applyMode(); }));
 $('#flip').checked = settings.flip;
 $('#flip').addEventListener('change', e => { settings.flip = e.target.checked; store.set('flip', settings.flip); });
+$('#flipv').checked = settings.flipv;
+$('#flipv').addEventListener('change', e => { settings.flipv = e.target.checked; store.set('flipv', settings.flipv); });
 function applyMode() {
   $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
   $$('[data-sens]').forEach(b => b.classList.toggle('on', b.dataset.sens === settings.sens));
@@ -93,8 +97,10 @@ function applyMode() {
   $('#cheat').hidden = settings.mode === 'buttons';
 }
 
+let lastPhase = '';
 function render() {
   const ph = state.phase;
+  setTimeout(() => { lastPhase = ph; }, 0);
   if (ph === 'lobby') {
     show('s-lobby');
     $('#lobby-msg').textContent = state.ready ? (state.opp ? 'Ready! Waiting for ' + state.opp + '...' : 'Ready! Waiting for player 2...') : (state.opp ? 'Opponent: ' + state.opp : 'Waiting for player 2 to scan in...');
@@ -113,7 +119,8 @@ function render() {
     const segs = $$('#sp i'); segs.forEach((s, i) => s.classList.toggle('on', (i + 1) * 20 <= state.sp));
     $('#sp').classList.toggle('full', state.sp >= 100);
     $('#btn-special').classList.toggle('ready', state.sp >= 100);
-    if (ph === 'intro') flashText('GET READY');
+    $('#sp-note').textContent = state.sp >= 100 ? 'READY!' : Math.floor(state.sp) + '%';
+    if (ph === 'intro') { flashText('GET READY'); if (lastPhase !== 'intro') recenter(); }
     if (ph === 'ko') flashText(state.winner === mySlot ? 'K.O.! NICE' : 'K.O.');
     if (ph === 'timeup') flashText('TIME!');
   }
@@ -128,59 +135,78 @@ function hitFeedback(kind) {
 }
 
 // ---------- input: tilt + gestures ----------
-let tilt = 0, mx = 0, block = false, holdLeft = false, holdRight = false;
-let cooldownUntil = 0, suppressMoveUntil = 0;
-const lp = { x: 0, y: 0, z: 0 };
+// Tilt comes from the gravity direction (works at any holding angle); the jab comes from sudden forward motion.
+let roll = 0, pitch = 0, pitch0 = 0, haveGrav = false;
+let mx = 0, block = false, duck = false, holdLeft = false, holdRight = false, holdDuck = false;
+let upArmed = true, cooldownUntil = 0, freezeUntil = 0;
+const grav = { x: 0, y: -9.8, z: 0 }, lp = { x: 0, y: 0, z: 0 };
+const UP_ON = 20, UP_RESET = 10, DUCK_ON = 16, DUCK_OFF = 10;
 
-function startSensors() {
-  addEventListener('deviceorientation', e => {
-    if (e.gamma == null) return;
-    tilt = tilt * 0.7 + e.gamma * 0.3;
-  });
-  addEventListener('devicemotion', onMotion);
-}
+function startSensors() { addEventListener('devicemotion', onMotion); }
+function recenter() { pitch0 = pitch; upArmed = true; }
+$('#btn-recenter').addEventListener('click', () => { recenter(); flashText('CENTRED', 600); });
 
 function onMotion(e) {
-  let a = e.acceleration;
-  if (!a || a.x == null) {
-    const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
-    lp.x = lp.x * 0.85 + g.x * 0.15; lp.y = lp.y * 0.85 + g.y * 0.15; lp.z = lp.z * 0.85 + g.z * 0.15;
-    a = { x: g.x - lp.x, y: g.y - lp.y, z: g.z - lp.z };
-  }
+  const g = e.accelerationIncludingGravity;
   const now = performance.now();
+  let a = e.acceleration;
+  if (g && g.x != null) {
+    if (!a || a.x == null) { // no separate linear acceleration: estimate it
+      lp.x = lp.x * 0.85 + g.x * 0.15; lp.y = lp.y * 0.85 + g.y * 0.15; lp.z = lp.z * 0.85 + g.z * 0.15;
+      a = { x: g.x - lp.x, y: g.y - lp.y, z: g.z - lp.z };
+    }
+    // gravity = total minus the hand's own motion, smoothed
+    if (now > freezeUntil) {
+      const k = haveGrav ? 0.25 : 1;
+      grav.x += ((g.x - a.x) - grav.x) * k; grav.y += ((g.y - a.y) - grav.y) * k; grav.z += ((g.z - a.z) - grav.z) * k;
+      roll = Math.atan2(grav.x, Math.hypot(grav.y, grav.z)) * 180 / Math.PI;
+      pitch = Math.atan2(grav.z, Math.abs(grav.y)) * 180 / Math.PI;
+      if (!haveGrav) { haveGrav = true; pitch0 = pitch; }
+    }
+  }
+  if (!a || a.z == null) return;
+  // JAB: a hard push straight forward/back along the screen's axis
   if (now < cooldownUntil) return;
-  const ax = Math.abs(a.x), ay = Math.abs(a.y), az = Math.abs(a.z);
-  const m = Math.max(ax, ay, az), T = THRESH[settings.sens];
-  if (m < T) return;
-  let act = null;
-  if (m === az && az > 1.25 * Math.max(ax, ay)) act = 'punch';
-  else if (m === ay && ay > 1.25 * Math.max(ax, az)) act = 'upper';
-  else if (m === ax && ax > 1.25 * Math.max(ay, az)) act = 'kick';
-  if (!act) return;
-  cooldownUntil = now + 320; suppressMoveUntil = now + 380;
-  const label = { punch: 'PUNCH!', upper: 'UPPERCUT!', kick: 'KICK!' }[act];
-  if (state.phase === 'fight' && settings.mode === 'motion') { send({ t: 'act', a: act }); flashText(label, 450); }
-  const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = label;
+  const ax = Math.abs(a.x), ay = Math.abs(a.y), az = Math.abs(a.z), T = THRESH[settings.sens];
+  if (az > T && az > 1.3 * Math.max(ax, ay)) {
+    cooldownUntil = now + 260; freezeUntil = now + 320;   // hold tilt still so the jab doesn't also move/jump you
+    if (settings.mode === 'motion' && state.phase === 'fight') { send({ t: 'act', a: 'punch' }); flashText(duck ? 'UPPERCUT!' : 'PUNCH!', 400); }
+    const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = duck ? 'UPPERCUT!' : 'PUNCH!';
+  }
 }
 
-function computeMx() {
-  if (settings.mode === 'buttons') return (holdRight ? 1 : 0) - (holdLeft ? 1 : 0);
-  if (performance.now() < suppressMoveUntil) return 0;
-  let g = settings.flip ? -tilt : tilt;
-  const dz = 8, full = 28;
-  if (Math.abs(g) < dz) return 0;
-  return Math.max(-1, Math.min(1, (g - Math.sign(g) * dz) / (full - dz)));
+function tiltLR() { return settings.flip ? -roll : roll; }
+function tiltUD() { const d = pitch - pitch0; return settings.flipv ? -d : d; }
+
+function updateMotion() {
+  if (settings.mode === 'buttons') {
+    mx = (holdRight ? 1 : 0) - (holdLeft ? 1 : 0); duck = holdDuck; return;
+  }
+  const g = tiltLR(), dz = 8, full = 26;
+  mx = Math.abs(g) < dz ? 0 : Math.max(-1, Math.min(1, (g - Math.sign(g) * dz) / (full - dz)));
+  const v = tiltUD();
+  // duck: hold the phone tipped down (hysteresis so it doesn't flicker)
+  duck = duck ? v < -DUCK_OFF : v < -DUCK_ON;
+  // jump: tip it up once; tip back to neutral before the next jump
+  if (upArmed && v > UP_ON) { upArmed = false; if (state.phase === 'fight') { send({ t: 'act', a: 'jump' }); flashText('JUMP!', 350); } const gt = $('#gesture-test'); if (gt && !$('#s-lobby').hidden) gt.textContent = 'JUMP!'; }
+  if (!upArmed && v < UP_RESET) upArmed = true;
+  if (!$('#s-lobby').hidden && duck) { const gt = $('#gesture-test'); if (gt) gt.textContent = 'DUCKING'; }
 }
 
 let lastSent = '';
 setInterval(() => {
-  mx = computeMx();
-  const pct = 50 + 45 * ((settings.mode === 'buttons') ? mx : Math.max(-1, Math.min(1, (settings.flip ? -tilt : tilt) / 28)));
-  for (const id of ['#tilt-dot', '#tilt-dot2']) { const d = $(id); if (d) d.style.left = `calc(${pct}% - 7px)`; }
-  const msg = { t: 'in', mx: Math.round(mx * 100) / 100, block };
-  const k = msg.mx + '|' + block;
+  updateMotion();
+  const lr = settings.mode === 'buttons' ? mx : Math.max(-1, Math.min(1, tiltLR() / 26));
+  const ud = settings.mode === 'buttons' ? (duck ? -1 : 0) : Math.max(-1, Math.min(1, tiltUD() / 26));
+  for (const [id, pid] of [['#tilt-dot', '#pad2d'], ['#tilt-dot2', '#pad2d-2']]) {
+    const d = $(id); if (!d) continue;
+    d.style.left = `calc(${50 + 44 * lr}% - 8px)`; d.style.top = `calc(${50 - 40 * ud}% - 8px)`;
+    const p = $(pid); p.classList.toggle('duck', duck); p.classList.toggle('jump', !upArmed && settings.mode === 'motion');
+  }
+  const msg = { t: 'in', mx: Math.round(mx * 100) / 100, block, duck };
+  const k = msg.mx + '|' + block + '|' + duck;
   if (k !== lastSent || Math.random() < 0.15) { send(msg); lastSent = k; }
-}, 40);
+}, 33);
 
 // ---------- buttons ----------
 function bindHold(el, on, off) {
@@ -190,7 +216,8 @@ function bindHold(el, on, off) {
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 bindHold($('#btn-block'), () => { block = true; }, () => { block = false; });
-$$('[data-hold]').forEach(b => bindHold(b, () => { if (b.dataset.hold === 'left') holdLeft = true; else holdRight = true; }, () => { if (b.dataset.hold === 'left') holdLeft = false; else holdRight = false; }));
+const holds = { left: v => holdLeft = v, right: v => holdRight = v, duck: v => holdDuck = v };
+$$('[data-hold]').forEach(b => bindHold(b, () => holds[b.dataset.hold](true), () => holds[b.dataset.hold](false)));
 $$('[data-act]').forEach(b => {
   b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('pressed'); send({ t: 'act', a: b.dataset.act }); });
   const up = () => b.classList.remove('pressed');

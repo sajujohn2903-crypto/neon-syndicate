@@ -146,6 +146,22 @@ const LEGS = {
     '.OBBBBBO.........................',
     '.OOOOOOO.........................',
   ],
+  crouch: [
+    '....OPPPPPPPPPPPPO......',
+    '...OPPPpPPPPPPPPPPO.....',
+    '..OPPPpOOOOOOOOPPPPO....',
+    '..OBBBBO......OBBBBO....',
+    '.OBBBBBBO.....OBBBBBBO..',
+    '.OOOOOOOO.....OOOOOOOO..',
+  ],
+  sweep: [
+    '....OPPPPPPPPPPPPOOOOOOOOOOOOOO..',
+    '...OPPPpPPPPPPPPPPPPPPPPPPPPPBBO.',
+    '..OPPPpOOOOOOOOOOOOOOOOOOOOOOBBBO',
+    '..OBBBBO....................OOOO.',
+    '.OBBBBBBO........................',
+    '.OOOOOOOO........................',
+  ],
   jump: [
     '.....OOOPPPPPPO.........',
     '......OPPPPPPPPOO.......',
@@ -168,14 +184,14 @@ function overlay(g, kind) {
   const put = (r, c, ch) => { if (g[r] && c >= 0 && c < W) g[r][c] = ch; };
   const isHead = (r, c) => g[r] && g[r][c] !== '.';
   if (kind === 'visor') {
-    for (let r = 0; r < 12; r++) {
+    for (let r = 0; r < 24; r++) {
       // find the eye row (contains 'E') and turn it into a glowing visor band
       const i = g[r].indexOf('E');
       if (i > 0) { for (let c = i - 3; c <= i + 2; c++) if (isHead(r, c) && g[r][c] !== 'O') put(r, c, 'A'); }
     }
   }
   if (kind === 'mohawk') {
-    for (let r = 0; r < 12; r++) {
+    for (let r = 1; r < 24; r++) {
       const i = g[r].indexOf('H');
       if (i > 0 && g[r - 1] && g[r - 1].slice(i, i + 5).every(ch => ch === 'O' || ch === '.')) {
         // first hair row: stack a mohawk above it
@@ -189,7 +205,9 @@ function overlay(g, kind) {
 }
 
 function composePose(upper, legs, kind) {
-  const g = toGrid(UPPER[upper].concat(LEGS[legs]));
+  let rows = UPPER[upper].concat(LEGS[legs]);
+  if (LEGS[legs].length === 6) rows = Array(9).fill('').concat(UPPER[upper], LEGS[legs]); // crouching: body drops 9px
+  const g = toGrid(rows);
   return overlay(g, kind);
 }
 
@@ -216,6 +234,7 @@ const POSES = {
   punch: ['punch', 'stance'], kick: ['guard', 'kick'], upper: ['upper', 'stance'],
   block: ['block', 'stance'], hit: ['guard', 'walk'], airpunch: ['punch', 'jump'], airkick: ['guard', 'kick'],
   special: ['punch', 'walk'],
+  crouch: ['guard', 'crouch'], crouchblock: ['block', 'crouch'], sweep: ['guard', 'sweep'],
 };
 
 const FIGHTERS = {
