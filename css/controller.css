@@ -100,3 +100,12 @@ body.fist #s-fight #cheat, body.fist #s-fight #pad2d-2, body.fist #s-fight #flas
 body.fist #s-fight .pad.main { flex: 1; grid-template-columns: 1fr; grid-template-rows: 1fr 1fr 1fr; margin-top: 8px; }
 body.fist #s-fight .pad.main .pb { min-height: 0; grid-row: auto; font-size: 18px; }
 body.fist #s-fight .pad.main .kick { order: 1; } body.fist #s-fight .pad.main .block { order: 2; } body.fist #s-fight .pad.main .special { order: 3; }
+
+.gripbox .seg button { padding: 8px 2px; }
+.thumbpad { display: none; }
+body.thumbs #s-fight #cheat, body.thumbs #s-fight #pad2d-2, body.thumbs #s-fight .pad.main, body.thumbs #s-fight .linkbtn { display: none; }
+body.thumbs #s-fight .thumbpad { display: flex; flex: 1; flex-direction: column; gap: 14px; align-items: center; justify-content: center; text-align: center;
+  padding: 18px; background: var(--bg2); border: 4px solid #ffe14d; touch-action: none; min-height: 300px; }
+body.thumbs #s-fight .thumbpad .pix { font-size: 13px; line-height: 1.8; color: #fff; }
+.thumbpad.blocking { border-color: var(--cyan); background: #0f2d4a; }
+.thumbpad.special { border-color: var(--pink); background: #3a0f2e; }

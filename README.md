@@ -36,6 +36,8 @@ Pick a grip on the phone before you ready up. Whatever position you're holding t
 - **Upright:** screen facing you, like holding a remote.
 - **Fist:** screen facing the floor, top of the phone pointing at the screen, punching like a real jab. You can't see the screen in this grip, so the buttons become three full-width bands you find by feel: **top = KICK, middle = BLOCK (hold), bottom = SPECIAL**.
 
+- **Thumbs-up (ARMS style):** hold the phone upright in your fist with your thumb on the screen, like a Joy-Con. Lean left/right to move, punch forward, flick up to jump, drop to duck. The whole screen is one thumb pad: **tap = KICK, hold = BLOCK, swipe up = SPECIAL**.
+
 ### Controls
 
 | Move | How |
@@ -44,6 +46,7 @@ Pick a grip on the phone before you ready up. Whatever position you're holding t
 | Punch | Thrust the phone forward |
 | Jump | Tip the top of the phone up/away (fist grip: raise your knuckles), then back to level before the next jump. Tilt sideways mid-jump to jump forward or back |
 | Duck | Drop the phone down quickly; lift it back up to stand (you also stand on your own after 2.5 s). Punches miss you while you're ducking |
+| Hook | Twist your wrist as you punch (uses the gyro). Slower, but curls round a block: half the damage gets through and it knocks their guard open |
 | Uppercut | Duck + punch. Launches the opponent |
 | Kick | KICK button |
 | Sweep | Duck + KICK. Knocks them down, but they can jump over it |
@@ -51,7 +54,7 @@ Pick a grip on the phone before you ready up. Whatever position you're holding t
 | Block | Hold BLOCK (duck while blocking for a low block) |
 | Special | SPECIAL button when the meter is full. Kira: Volt Dash · Brick: Ground Pound |
 
-**Combos:** once an attack lands, your next press flows straight into the next one. Punch → kick → uppercut → special is the big chain. Presses made while you're busy are remembered for a moment, so tap the next move a little early.
+**Combos:** once an attack lands, your next press flows straight into the next one. Punch → hook → kick → uppercut → special is the big chain. Presses made while you're busy are remembered for a moment, so tap the next move a little early.
 
 If the left/right tilt or the jump tilt feels backwards, flip it in Controls & sensitivity. Tap **Re-centre jump tilt** if jumps fire on their own (it also re-centres every round), and use the Low/Med/High setting if moves fire too easily or not enough.
 
@@ -61,8 +64,8 @@ The phone's volume buttons can't be used: iPhone Safari doesn't tell web pages w
 
 Press **Enter** in the lobby to start a keyboard match, or **C** to fight the CPU.
 
-- P1: A/D move, W jump, S duck, Q block, F punch, G kick, E special
-- P2: ←/→ move, ↑ jump, ↓ duck, J block, K punch, L kick, O special
+- P1: A/D move, W jump, S duck, Q block, F punch, T hook, G kick, E special
+- P2: ←/→ move, ↑ jump, ↓ duck, J block, K punch, U hook, L kick, O special
 
 The projector remote's OK button also starts a match from the lobby.
 

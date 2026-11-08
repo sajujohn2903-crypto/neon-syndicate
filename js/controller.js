@@ -94,6 +94,7 @@ $$('[data-grip]').forEach(b => b.addEventListener('click', () => { settings.grip
 function applyMode() {
   $$('[data-grip]').forEach(b => b.classList.toggle('on', b.dataset.grip === settings.grip));
   document.body.classList.toggle('fist', settings.grip === 'fist' && settings.mode === 'motion');
+  document.body.classList.toggle('thumbs', settings.grip === 'thumbs' && settings.mode === 'motion');
   $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === settings.mode));
   $$('[data-sens]').forEach(b => b.classList.toggle('on', b.dataset.sens === settings.sens));
   $('#pad-buttons').hidden = settings.mode !== 'buttons';
@@ -145,7 +146,8 @@ let roll = 0, pitch = 0, upArmed = true, haveGrav = false;
 const g0 = { x: 0, y: -9.8, z: 0 };   // gravity at the neutral pose (set on READY and each round)
 const UP_ON = 20, UP_RESET = 10;
 let mx = 0, block = false, duck = false, holdLeft = false, holdRight = false, holdDuck = false;
-let jabUntil = 0, vertUntil = 0, freezeUntil = 0, duckUntil = 0;
+let jabUntil = 0, vertUntil = 0, freezeUntil = 0, duckUntil = 0, twist = 0, twistAt = 0;
+const TWIST_DPS = 280;   // wrist twist speed (degrees/sec) that turns a punch into a hook
 const grav = { x: 0, y: -9.8, z: 0 }, lp = { x: 0, y: 0, z: 0 };
 const VTHRESH = { low: 13, med: 9.5, high: 7 };
 const DUCK_MAX_MS = 2500;
@@ -162,6 +164,12 @@ function onMotion(e) {
   const now = performance.now();
   let a = e.acceleration;
   if (!g || g.x == null) return;
+  // GYRO: how fast the wrist is twisting about the arm's axis (phone's long axis, or screen axis when upright)
+  const rr = e.rotationRate;
+  if (rr) {
+    const w = Math.abs(settings.grip === 'upright' ? (rr.alpha || 0) : (rr.gamma || 0));
+    if (w > twist || now - twistAt > 200) { twist = w; twistAt = now; }
+  }
   if (!a || a.x == null) { // no separate linear acceleration: estimate it
     lp.x = lp.x * 0.85 + g.x * 0.15; lp.y = lp.y * 0.85 + g.y * 0.15; lp.z = lp.z * 0.85 + g.z * 0.15;
     a = { x: g.x - lp.x, y: g.y - lp.y, z: g.z - lp.z };
@@ -188,7 +196,11 @@ function onMotion(e) {
   // an upright grip (screen towards you) and the fist grip (screen facing the floor) alike.
   if (now > jabUntil && horiz > THRESH[settings.sens] && horiz > 1.3 * Math.abs(up)) {
     jabUntil = now + 260; vertUntil = Math.max(vertUntil, now + 300); freezeUntil = now + 320;
-    fightAct('punch', duck ? 'UPPERCUT!' : 'PUNCH!');
+    const hooked = twist > TWIST_DPS && now - twistAt < 250 && !duck;
+    // a hook needs the twist to finish too, so give the wrist a moment before deciding
+    if (hooked) fightAct('hook', 'HOOK!');
+    else setTimeout(() => { const late = twist > TWIST_DPS && performance.now() - twistAt < 250 && !duck;
+      late ? fightAct('hook', 'HOOK!') : fightAct('punch', duck ? 'UPPERCUT!' : 'PUNCH!'); }, 70);
     return;
   }
   // JUMP / DUCK: quick move up or down. The first push decides; the stop-jolt that follows is ignored.
@@ -197,6 +209,7 @@ function onMotion(e) {
     vertUntil = now + 420; freezeUntil = now + 450; jabUntil = Math.max(jabUntil, now + 200);
     if (up > 0) {
       if (duck) { duck = false; lobbyNote('STAND'); if (state.phase === 'fight' && settings.mode === 'motion') flashText('STAND', 300); }
+      else if (settings.grip === 'thumbs') fightAct('jump', 'JUMP!');   // thumbs-up grip: flick up to jump
     } else {
       duck = true; duckUntil = now + DUCK_MAX_MS; lobbyNote('DUCK');
       if (state.phase === 'fight' && settings.mode === 'motion') flashText('DUCK', 400);
@@ -205,7 +218,9 @@ function onMotion(e) {
 }
 
 $('#btn-recenter').addEventListener('click', () => { recenter(); flashText('CENTRED', 600); });
-function tiltLR() { let r = settings.grip === 'fist' ? -roll : roll; return settings.flip ? -r : r; }
+// Thumbs-up grip: phone stands upright in your fist with the screen facing sideways, so "lean left/right"
+// is a rotation about the phone's short axis (the same angle the other grips use for the jump tilt).
+function tiltLR() { let r = settings.grip === 'fist' ? -roll : settings.grip === 'thumbs' ? -pitch : roll; return settings.flip ? -r : r; }
 
 function updateMotion() {
   if (settings.mode === 'buttons') {
@@ -215,6 +230,7 @@ function updateMotion() {
   mx = Math.abs(g) < dz ? 0 : Math.max(-1, Math.min(1, (g - Math.sign(g) * dz) / (full - dz)));
   if (duck && performance.now() > duckUntil) duck = false;   // safety: never stay stuck ducking
   // JUMP: tip the top of the phone up; tip it back to centre before the next jump
+  if (settings.grip === 'thumbs') return;      // thumbs-up grip jumps with a flick up instead
   let v = -pitch; if (settings.flipv) v = -v;   // + = top of the phone tipping up/away (same on every phone)
   if (upArmed && v > UP_ON) { upArmed = false; if (duck) duck = false; fightAct('jump', 'JUMP!'); }
   if (!upArmed && v < UP_RESET) upArmed = true;
@@ -224,7 +240,7 @@ let lastSent = '';
 setInterval(() => {
   updateMotion();
   const lr = settings.mode === 'buttons' ? mx : Math.max(-1, Math.min(1, tiltLR() / 26));
-  const ud = duck ? -1 : (settings.mode === 'motion' ? Math.max(0, Math.min(1, (settings.flipv ? pitch : -pitch) / 26)) : 0);
+  const ud = duck ? -1 : (settings.mode === 'motion' && settings.grip !== 'thumbs' ? Math.max(0, Math.min(1, (settings.flipv ? pitch : -pitch) / 26)) : 0);
   for (const [id, pid] of [['#tilt-dot', '#pad2d'], ['#tilt-dot2', '#pad2d-2']]) {
     const d = $(id); if (!d) continue;
     d.style.left = `calc(${50 + 44 * lr}% - 8px)`; d.style.top = `calc(${50 - 40 * ud}% - 8px)`;
@@ -257,3 +273,31 @@ async function keepAwake() { try { wakeLock = await navigator.wakeLock?.request(
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (conn && !conn.open && peer && !peer.destroyed) openConn(); } });
 
 applyMode();
+
+// ---------- thumbs-up grip: one big thumb pad ----------
+// tap = KICK · press and hold = BLOCK · swipe up = SPECIAL
+(function thumbPad() {
+  const pad = $('#thumbpad'); if (!pad) return;
+  let downAt = 0, y0 = 0, holdTimer = 0, swiped = false, holding = false;
+  const label = $('#thumbpad-label');
+  const show = t => { label.textContent = t; };
+  pad.addEventListener('pointerdown', e => {
+    e.preventDefault(); downAt = performance.now(); y0 = e.clientY; swiped = false; holding = false;
+    try { pad.setPointerCapture(e.pointerId); } catch (_) { }
+    holdTimer = setTimeout(() => { holding = true; block = true; pad.classList.add('blocking'); show('BLOCKING'); }, 180);
+  });
+  pad.addEventListener('pointermove', e => {
+    if (!swiped && !holding && y0 - e.clientY > 60) {
+      swiped = true; clearTimeout(holdTimer); send({ t: 'act', a: 'special' }); show('SPECIAL!'); pad.classList.add('special');
+    }
+  });
+  const up = e => {
+    e.preventDefault(); clearTimeout(holdTimer);
+    if (holding) { block = false; pad.classList.remove('blocking'); }
+    else if (!swiped && performance.now() - downAt < 180) { send({ t: 'act', a: 'kick' }); show('KICK!'); }
+    holding = false; pad.classList.remove('special');
+    setTimeout(() => show('TAP = KICK · HOLD = BLOCK · SWIPE UP = SPECIAL'), 500);
+  };
+  pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+  pad.addEventListener('contextmenu', e => e.preventDefault());
+})();
