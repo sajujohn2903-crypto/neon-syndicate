@@ -38,39 +38,94 @@ $('#btn-join').addEventListener('click', async () => {
   if (!window.isSecureContext) motionOK = false;
   if (!motionOK && typeof DeviceMotionEvent !== 'undefined' && !DeviceMotionEvent.requestPermission) motionOK = true; // Android: no prompt needed
   if (!motionOK) { settings.mode = 'buttons'; store.set('mode', 'buttons'); }
-  startSensors();
+  if (!window.__sensors) { window.__sensors = true; startSensors(); }
   keepAwake();
   connect();
   $('#btn-join').disabled = true; $('#btn-join').textContent = 'CONNECTING...';
 });
 
 // ---------- networking ----------
+// Route 1: direct WebRTC link (PeerJS). Route 2 (backup): relay through a public MQTT server.
+// We try direct first; if it hasn't opened in 4 s, or errors, we switch to the relay.
+const RELAY_URLS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const RELAY_PREFIX = 'neonsyndicate/v1/';
+let route = null;            // 'direct' | 'relay' once linked
+let relay = null, relayTries = 0, joinTimer = 0, helloTimer = 0, gotYou = false;
+
+function joinStatus(t) { const b = $('#btn-join'); b.textContent = t; }
+function joinFail(msg) {
+  clearTimeout(joinTimer); clearInterval(helloTimer);
+  $('#join-err').textContent = msg; setNet(false);
+  const b = $('#btn-join'); b.disabled = false; b.textContent = 'TRY AGAIN';
+  try { peer && peer.destroy(); } catch (e) { } peer = null; conn = null;
+  try { relay && relay.end(true); } catch (e) { } relay = null; route = null;
+}
+
 function connect() {
-  if (typeof Peer === 'undefined') { $('#join-err').textContent = 'Could not load the network library. Check your internet.'; return; }
-  if (!peer || peer.destroyed) {
+  gotYou = false; route = null;
+  joinStatus('FINDING ROOM...');
+  // overall safety net: never sit on "connecting" forever
+  clearTimeout(joinTimer);
+  joinTimer = setTimeout(() => { if (!gotYou) joinFail('Could not reach the projector. Check the room code, and that the projector is on the lobby screen with internet.'); }, 20000);
+  startDirect();
+  setTimeout(() => { if (!gotYou && route !== 'direct') startRelay(); }, 4000);
+}
+
+function startDirect() {
+  if (typeof Peer === 'undefined') { startRelay(); return; }
+  try {
     peer = new Peer({ debug: 0 });
-    peer.on('open', openConn);
-    peer.on('error', err => {
-      const msg = err.type === 'peer-unavailable' ? 'Room ' + room + ' not found. Check the code on the projector.' : 'Network error: ' + (err.type || err.message);
-      $('#join-err').textContent = msg; setNet(false);
-      $('#btn-join').disabled = false; $('#btn-join').textContent = 'ENTER THE FIGHT';
+    peer.on('open', () => {
+      conn = peer.connect('nsx-' + room, { reliable: true, metadata: { device } });
+      conn.on('open', () => {
+        if (route === 'relay') { try { conn.close(); } catch (e) { } return; }
+        route = 'direct'; setNet(true); send({ t: 'pick', f: myFighter }); sendName();
+      });
+      conn.on('data', onMsg);
+      conn.on('close', () => { if (route === 'direct') { route = null; setNet(false); reconnect(); } });
     });
-    peer.on('disconnected', () => { setTimeout(() => peer && !peer.destroyed && peer.reconnect(), 1000); });
-  } else openConn();
+    peer.on('error', err => { console.warn('direct', err && err.type); if (!route) startRelay(); });
+  } catch (e) { startRelay(); }
 }
-function openConn() {
-  conn = peer.connect('nsx-' + room, { reliable: true, metadata: { device } });
-  conn.on('open', () => { setNet(true); send({ t: 'pick', f: myFighter }); sendName(); });
-  conn.on('data', onMsg);
-  conn.on('close', () => { setNet(false); setTimeout(() => { if (peer && !peer.destroyed) openConn(); }, 1500); });
+
+function startRelay() {
+  if (relay || route === 'direct' || typeof mqtt === 'undefined') return;
+  joinStatus('LINKING...');
+  const url = RELAY_URLS[relayTries++ % RELAY_URLS.length];
+  const c = relay = mqtt.connect(url, { clientId: 'nsx-pad-' + device + '-' + Math.random().toString(36).slice(2, 6), reconnectPeriod: 2000, connectTimeout: 7000, keepalive: 20 });
+  let up = false;
+  c.on('connect', () => {
+    up = true;
+    c.subscribe(RELAY_PREFIX + room + '/down/' + device);
+    const hello = () => relaySend({ t: 'hello' });
+    hello(); clearInterval(helloTimer); helloTimer = setInterval(() => { if (!gotYou) hello(); else clearInterval(helloTimer); }, 1000);
+  });
+  c.on('message', (topic, payload) => {
+    let m; try { m = JSON.parse(payload.toString()); } catch (e) { return; }
+    if (route !== 'direct') { if (route !== 'relay') { route = 'relay'; setNet(true); try { peer && peer.destroy(); } catch (e) { } send({ t: 'pick', f: myFighter }); sendName(); } onMsg(m); }
+  });
+  c.on('close', () => { if (route === 'relay') setNet(false); });
+  c.on('reconnect', () => { if (route === 'relay') relaySend({ t: 'hello' }); });
+  // this relay server unreachable: try the other one
+  setTimeout(() => { if (!up && relay === c && !gotYou) { c.end(true); relay = null; if (relayTries < 4) startRelay(); } }, 8000);
 }
-function send(m) { if (conn && conn.open) { try { conn.send(m); } catch (e) { } } }
-function setNet(ok) { const p = $('#net'); p.textContent = ok ? 'Connected' : 'Reconnecting...'; p.classList.toggle('bad', !ok); }
+function relaySend(m) { if (relay && relay.connected) relay.publish(RELAY_PREFIX + room + '/up', JSON.stringify({ d: device, m })); }
+
+function reconnect() { setTimeout(() => { if (!route) { relay ? relaySend({ t: 'hello' }) : startRelay(); } }, 800); }
+
+function send(m) {
+  if (route === 'direct' && conn && conn.open) { try { conn.send(m); } catch (e) { } }
+  else if (route === 'relay') relaySend(m);
+}
+// keep the relay link alive and tell the projector we're still here
+setInterval(() => { if (route === 'relay') relaySend({ t: 'ping' }); }, 2000);
+addEventListener('pagehide', () => { if (route === 'relay') relaySend({ t: 'bye' }); });
+function setNet(ok) { const p = $('#net'); p.textContent = ok ? (route === 'relay' ? 'Connected (backup)' : 'Connected') : 'Reconnecting...'; p.classList.toggle('bad', !ok); }
 
 function onMsg(m) {
   if (!m) return;
-  if (m.t === 'full') { $('#join-err').textContent = 'This game already has 2 players.'; show('s-join'); return; }
-  if (m.t === 'you') { mySlot = m.slot; myFighter = m.fighter; $('#who').textContent = 'P' + m.slot; markCard(); show('s-lobby'); applyMode(); }
+  if (m.t === 'full') { joinFail('This game already has 2 players.'); show('s-join'); return; }
+  if (m.t === 'you') { gotYou = true; clearTimeout(joinTimer); clearInterval(helloTimer); mySlot = m.slot; myFighter = m.fighter; $('#who').textContent = 'P' + m.slot; markCard(); show('s-lobby'); applyMode(); }
   if (m.t === 'buzz') { hitFeedback(m.k); }
   if (m.t === 'nometer') { flashText('METER NOT FULL', 700); }
   if (m.t === 'special') { flashText('SPECIAL!', 700); }
@@ -276,7 +331,7 @@ $$('[data-act]').forEach(b => {
 // ---------- keep screen on ----------
 let wakeLock = null;
 async function keepAwake() { try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) { } }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (conn && !conn.open && peer && !peer.destroyed) openConn(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); if (route === 'relay') relaySend({ t: 'hello' }); else if (route === 'direct' && conn && !conn.open) { route = null; reconnect(); } } });
 
 applyMode();
 

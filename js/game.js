@@ -392,30 +392,88 @@ const controllerURL = new URL('controller.html?room=' + ROOM, location.href).hre
 let qr = null;
 try { qr = qrcode(0, 'M'); qr.addData(controllerURL); qr.make(); } catch (e) { qr = null; }
 
+// Two ways for phones to reach the projector:
+//  1. direct WebRTC link (PeerJS) - fastest, but fails on some Wi-Fi setups
+//  2. backup relay through a public MQTT server over secure WebSockets - always works with internet
+const RELAY_URLS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const RELAY_PREFIX = 'neonsyndicate/v1/';
+let netDirect = 'connecting', netRelay = 'connecting';
+function updateNetStatus() {
+  netStatus = (netDirect === 'online' || netRelay === 'online') ? 'online'
+    : (netDirect.startsWith('error') && netRelay.startsWith('error')) ? 'no internet' : 'connecting';
+}
+
+// Give each phone a slot when its link opens (same logic for both routes).
+function attachConn(conn) {
+  conn.on('open', () => {
+    const id = conn.metadata && conn.metadata.device;
+    let s = id ? [1, 2].find(n => slots[n].deviceId === id) : 0;
+    if (s && slots[s].conn && slots[s].conn !== conn) { const old = slots[s].conn; old.slot = 0; try { old.close(); } catch (e) { } slots[s].conn = null; }
+    if (!s) s = [1, 2].find(n => !slots[n].conn && !(slots[n].cpu && phase !== 'lobby'));
+    if (!s) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
+    const sl = slots[s]; const rejoin = sl.deviceId === id && !!id; sl.conn = conn; sl.deviceId = id; sl.cpu = false; if (!rejoin) sl.ready = false; keyboardUsed[s] = false;
+    conn.slot = s;
+    conn.send({ t: 'you', slot: s, fighter: sl.fighter, via: conn.via });
+    blip(520, 0.1); setTimeout(() => blip(780, 0.12), 90);
+    broadcastState();
+  });
+  conn.on('data', msg => onMsg(conn, msg));
+  conn.on('close', () => { const s = conn.slot; if (s && slots[s].conn === conn) { slots[s].conn = null; slots[s].ready = false; slots[s].input = freshInput(); broadcastState(); } });
+}
+
 function initNet() {
-  if (typeof Peer === 'undefined') { netStatus = 'offline'; return; }
+  initDirect();
+  initRelay();
+}
+
+function initDirect() {
+  if (typeof Peer === 'undefined') { netDirect = 'error: no library'; updateNetStatus(); return; }
   peer = new Peer('nsx-' + ROOM, { debug: 0 });
-  peer.on('open', () => { netStatus = 'online'; });
-  peer.on('error', err => { netStatus = 'error: ' + (err.type || err.message); console.warn(err); });
-  peer.on('disconnected', () => { netStatus = 'reconnecting'; setTimeout(() => peer && peer.reconnect(), 1500); });
-  peer.on('connection', conn => {
-    conn.on('open', () => {
-      // previous slot by device id, else first free
-      const id = conn.metadata && conn.metadata.device;
-      let s = id ? [1, 2].find(n => slots[n].deviceId === id) : 0;
-      if (s && slots[s].conn && slots[s].conn !== conn) { const old = slots[s].conn; old.slot = 0; try { old.close(); } catch (e) { } slots[s].conn = null; }
-      if (!s) s = [1, 2].find(n => !slots[n].conn && !(slots[n].cpu && phase !== 'lobby'));
-      if (!s) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); return; }
-      const sl = slots[s]; const rejoin = sl.deviceId === id && !!id; sl.conn = conn; sl.deviceId = id; sl.cpu = false; if (!rejoin) sl.ready = false; keyboardUsed[s] = false;
-      conn.slot = s;
-      conn.send({ t: 'you', slot: s, fighter: sl.fighter });
-      blip(520, 0.1); setTimeout(() => blip(780, 0.12), 90);
-      broadcastState();
-    });
-    conn.on('data', msg => onMsg(conn, msg));
-    conn.on('close', () => { const s = conn.slot; if (s && slots[s].conn === conn) { slots[s].conn = null; slots[s].ready = false; slots[s].input = freshInput(); broadcastState(); } });
+  peer.on('open', () => { netDirect = 'online'; updateNetStatus(); });
+  peer.on('error', err => { if (err.type !== 'peer-unavailable') { netDirect = 'error: ' + (err.type || err.message); updateNetStatus(); } console.warn(err); });
+  peer.on('disconnected', () => { netDirect = 'reconnecting'; updateNetStatus(); setTimeout(() => peer && !peer.destroyed && peer.reconnect(), 1500); });
+  peer.on('connection', conn => { conn.via = 'direct'; attachConn(conn); });
+}
+
+// A relay "connection" that behaves like a PeerJS DataConnection.
+class RelayConn {
+  constructor(client, device) { this.client = client; this.device = device; this.metadata = { device }; this.open = true; this.via = 'relay'; this.h = {}; this.lastSeen = Date.now(); }
+  on(ev, fn) { (this.h[ev] = this.h[ev] || []).push(fn); }
+  emit(ev, arg) { (this.h[ev] || []).forEach(fn => fn(arg)); }
+  send(msg) { if (this.open) this.client.publish(RELAY_PREFIX + ROOM + '/down/' + this.device, JSON.stringify(msg)); }
+  close() { if (!this.open) return; this.open = false; delete relayConns[this.device]; this.emit('close'); }
+}
+const relayConns = {};
+let relayClient = null;
+
+function initRelay(attempt = 0) {
+  if (typeof mqtt === 'undefined') { netRelay = 'error: no library'; updateNetStatus(); return; }
+  const url = RELAY_URLS[attempt % RELAY_URLS.length];
+  const c = mqtt.connect(url, { clientId: 'nsx-screen-' + ROOM + '-' + Math.random().toString(36).slice(2, 8), reconnectPeriod: 3000, connectTimeout: 8000, keepalive: 30 });
+  relayClient = c;
+  let everConnected = false;
+  c.on('connect', () => { everConnected = true; netRelay = 'online'; updateNetStatus(); c.subscribe(RELAY_PREFIX + ROOM + '/up'); });
+  c.on('close', () => { if (netRelay === 'online') { netRelay = 'reconnecting'; updateNetStatus(); } });
+  c.on('error', e => console.warn('relay', e && e.message));
+  // first server unreachable: try the other one
+  setTimeout(() => { if (!everConnected && relayClient === c) { c.end(true); if (attempt < 3) initRelay(attempt + 1); else { netRelay = 'error: relay unreachable'; updateNetStatus(); } } }, 9000);
+  c.on('message', (topic, payload) => {
+    let pkt; try { pkt = JSON.parse(payload.toString()); } catch (e) { return; }
+    const dev = pkt && typeof pkt.d === 'string' ? pkt.d.slice(0, 40) : null; const m = pkt && pkt.m;
+    if (!dev || !m) return;
+    let conn = relayConns[dev];
+    if (m.t === 'hello') {
+      if (conn) { conn.lastSeen = Date.now(); conn.send({ t: 'you', slot: conn.slot, fighter: conn.slot ? slots[conn.slot].fighter : 'kira', via: 'relay' }); broadcastState(); return; }
+      conn = relayConns[dev] = new RelayConn(c, dev); attachConn(conn); conn.emit('open'); return;
+    }
+    if (!conn) return;
+    conn.lastSeen = Date.now();
+    if (m.t === 'bye') { conn.close(); return; }
+    if (m.t !== 'ping') conn.emit('data', m);
   });
 }
+// drop relay phones that have gone quiet
+setInterval(() => { const now = Date.now(); for (const d of Object.keys(relayConns)) if (now - relayConns[d].lastSeen > 9000) relayConns[d].close(); }, 2000);
 
 function onMsg(conn, m) {
   const s = conn.slot; if (!s || !m) return; const sl = slots[s];
@@ -639,7 +697,7 @@ function drawLobby() {
   };
   row(1, 80); row(2, 110);
   txt('One phone? Tap SOLO to fight the CPU.', 20, 144, '#9a93c9', 8);
-  txt(netStatus === 'online' ? 'Projector remote: OK = start' : 'Network: ' + netStatus, 20, 158, netStatus === 'online' ? '#9a93c9' : '#ff4d4d', 8);
+  txt(netStatus === 'online' ? 'Projector remote: OK = start' : (netStatus === 'connecting' ? 'Connecting to the internet...' : 'No internet - check the Wi-Fi'), 20, 158, netStatus === 'online' ? '#9a93c9' : '#ff4d4d', 8);
 }
 
 function draw() {
