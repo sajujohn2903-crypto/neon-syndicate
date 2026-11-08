@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0720">
+<title>Neon Syndicate · Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/controller.css">
+</head>
+<body>
+<main id="app">
+
+  <!-- JOIN -->
+  <section id="s-join" class="screen">
+    <h1 class="logo"><span class="c">NEON</span><span class="m">SYNDICATE</span></h1>
+    <p class="lead">Your phone is your fist. Hold it upright, like you're gripping it.</p>
+    <label class="field">
+      <span>Room code (on the projector)</span>
+      <input id="room" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+    </label>
+    <button id="btn-join" class="big pink">ENTER THE FIGHT</button>
+    <p class="hint">You'll be asked to allow motion access. Turn on portrait lock for the best feel.</p>
+    <p id="join-err" class="err" role="alert"></p>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="s-lobby" class="screen" hidden>
+    <div class="topbar"><span id="who" class="pix">P1</span><span id="net" class="pill">Connected</span></div>
+    <h2 class="pix small">PICK YOUR FIGHTER</h2>
+    <div class="cards">
+      <button class="card" data-f="kira"><span class="pix">KIRA-9</span><span>Fast cyborg assassin. Special: Volt Dash.</span></button>
+      <button class="card" data-f="brick"><span class="pix">BRICK</span><span>Slow, armoured, hits hard. Special: Ground Pound.</span></button>
+    </div>
+
+    <div class="tiltbox">
+      <div class="pix small">TILT TEST</div>
+      <div class="track"><div id="tilt-dot" class="dot"></div></div>
+      <div class="hint">Tilt right → dot goes right. If not, flip it below.</div>
+      <div id="gesture-test" class="gesture">Try a jab, a flick up, a side swing</div>
+    </div>
+
+    <details class="settings">
+      <summary>Controls &amp; sensitivity</summary>
+      <div class="seg" role="group" aria-label="Control mode">
+        <button data-mode="motion" class="on">Motion</button><button data-mode="buttons">Buttons</button>
+      </div>
+      <div class="seg" role="group" aria-label="Motion sensitivity">
+        <button data-sens="low">Low</button><button data-sens="med" class="on">Med</button><button data-sens="high">High</button>
+      </div>
+      <label class="check"><input type="checkbox" id="flip"> Flip tilt direction</label>
+    </details>
+
+    <p id="lobby-msg" class="status"></p>
+    <div class="row2">
+      <button id="btn-ready" class="big pink">READY</button>
+      <button id="btn-solo" class="big ghost">SOLO vs CPU</button>
+    </div>
+  </section>
+
+  <!-- FIGHT -->
+  <section id="s-fight" class="screen fight" hidden>
+    <div class="hud">
+      <div class="hpwrap"><div id="hp" class="hp"></div></div>
+      <div class="hudrow"><span id="me-name" class="pix small">KIRA-9</span><span id="score" class="pix small">0 - 0</span></div>
+      <div class="sp" id="sp"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div id="flashmsg" class="flashmsg pix"></div>
+    <div class="track wide"><div id="tilt-dot2" class="dot"></div></div>
+
+    <div id="cheat" class="cheat">
+      <div><b>PUNCH</b>Jab forward</div><div><b>UPPER</b>Flick up</div><div><b>KICK</b>Swing sideways</div>
+    </div>
+
+    <div id="pad-buttons" class="pad" hidden>
+      <button class="pb" data-hold="left" aria-label="Move left">◀</button>
+      <button class="pb" data-hold="right" aria-label="Move right">▶</button>
+      <button class="pb" data-act="punch">PUNCH</button>
+      <button class="pb" data-act="kick">KICK</button>
+      <button class="pb" data-act="upper">UPPER</button>
+    </div>
+
+    <div class="pad main">
+      <button class="pb jump" data-act="jump">JUMP</button>
+      <button class="pb block" id="btn-block">BLOCK<small>hold</small></button>
+      <button class="pb special" id="btn-special" data-act="special">SPECIAL</button>
+    </div>
+  </section>
+
+  <!-- OVER -->
+  <section id="s-over" class="screen" hidden>
+    <h2 id="over-title" class="pix">YOU WIN</h2>
+    <p id="over-sub" class="lead"></p>
+    <button id="btn-rematch" class="big pink">REMATCH</button>
+  </section>
+</main>
+<div id="hitflash" aria-hidden="true"></div>
+<script src="js/vendor/peerjs.min.js"></script>
+<script src="js/controller.js"></script>
+</body>
+</html>
