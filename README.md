@@ -77,3 +77,14 @@ The projector remote's OK button also starts a match from the lobby.
 - iPhone Safari doesn't let websites vibrate the phone. The controller flashes pink when you're hit and cyan when you block instead.
 - Motion gestures can need tuning per person. Use the Low/Med/High sensitivity setting.
 - If the room code isn't found, refresh the projector page to get a fresh room.
+
+## Android app for the projector
+
+`android/` is a small Android app that opens the live game fullscreen. GitHub Actions builds it whenever `android/` changes and posts it as the **apk-latest** release.
+
+Install it on the projector:
+1. Install **Downloader** (by AFTVnews) from the projector's Play Store.
+2. Open it and enter `https://github.com/sajujohn2903-crypto/neon-syndicate/releases/latest/download/neon-syndicate.apk`.
+3. Allow Downloader to install unknown apps when asked, then tap **Install**.
+
+Neon Syndicate then shows up in the app list. The remote's OK button starts a match. The app always loads the newest version of the game, so you only reinstall when the app itself changes. Each build is signed by GitHub's build machine, so if Android refuses to update the app, uninstall the old one first.

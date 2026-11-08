@@ -642,6 +642,7 @@ function draw() {
   try { await document.fonts.load('8px "Press Start 2P"'); } catch (e) { }
   SPRITES = buildSprites(); BG = buildBackground(); initRain();
   initNet();
+  if (/app=android/.test(location.search)) audio(); // the projector app allows sound without a tap
   requestAnimationFrame(frame);
 })();
 
